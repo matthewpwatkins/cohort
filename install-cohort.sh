@@ -1,43 +1,39 @@
 #!/usr/bin/env bash
 #
-# install-claude-session.sh — install the claude-session helper and register
-# multi-session guidance in the user-level CLAUDE.md.
-#
-#   ./install-claude-session.sh              install or update
-#   ./install-claude-session.sh --uninstall  remove script + guidance block
-#   ./install-claude-session.sh --bindir DIR install somewhere specific
+# install-cohort.sh — install the `cohort` command and register its
+# multi-session guidance in the user-level CLAUDE.md. See usage() below.
 #
 # Idempotent: re-running converges to the same state and reports "unchanged".
 # Runs from a clone or straight off a pipe: payload files are read from
 # alongside this script when present, otherwise downloaded from
-# $CLAUDE_SWARM_REPO at $CLAUDE_SWARM_REF.
+# $COHORT_REPO at $COHORT_REF.
 
 set -euo pipefail
 
 # Trust sibling files only when this really is a checkout, not whatever the
 # cwd happens to hold when the installer is run off a pipe.
 SRC=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo .)
-[[ -f $SRC/install-claude-session.sh && -f $SRC/claude-session.sh && -f $SRC/guidance.md ]] || SRC=''
+[[ -f $SRC/install-cohort.sh && -f $SRC/cohort.sh && -f $SRC/guidance.md ]] || SRC=''
 
-REPO=${CLAUDE_SWARM_REPO:-matthewpwatkins/claude-swarm}
-REF=${CLAUDE_SWARM_REF:-main}
+REPO=${COHORT_REPO:-matthewpwatkins/cohort}
+REF=${COHORT_REF:-main}
 RAW=https://raw.githubusercontent.com/$REPO/$REF
-BEGIN_MARK='<!-- BEGIN claude-session (managed by install-claude-session.sh) -->'
-END_MARK='<!-- END claude-session -->'
+BEGIN_MARK='<!-- BEGIN cohort (managed by install-cohort.sh) -->'
+END_MARK='<!-- END cohort -->'
 
 CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
 CLAUDE_MD=$CONFIG_DIR/CLAUDE.md
-BINDIR=${CLAUDE_SESSION_BINDIR:-$HOME/bin}
+BINDIR=${COHORT_BINDIR:-$HOME/bin}
 MODE=install
 
 usage() {
   cat <<'USAGE'
-install-claude-session.sh — install the claude-session helper and register
+install-cohort.sh — install the `cohort` command and register its
 multi-session guidance in the user-level CLAUDE.md.
 
-  ./install-claude-session.sh              install or update
-  ./install-claude-session.sh --uninstall  remove script + guidance block
-  ./install-claude-session.sh --bindir DIR install somewhere specific
+  ./install-cohort.sh              install or update
+  ./install-cohort.sh --uninstall  remove command + guidance block
+  ./install-cohort.sh --bindir DIR install somewhere specific
 USAGE
   exit "${1:-0}"
 }
@@ -54,7 +50,7 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-TARGET=$BINDIR/claude-session
+TARGET=$BINDIR/cohort
 say()  { printf '%s\n' "$*"; }
 warn() { printf '%s\n' "$*" >&2; }
 die()  { warn "$*"; exit 1; }
@@ -90,9 +86,9 @@ trim_trailing_blank() {
 
 install_bin() {
   local src
-  src=$(payload claude-session.sh)
+  src=$(payload cohort.sh)
   if [[ -x $TARGET ]] && cmp -s "$src" "$TARGET"; then
-    say "script:   unchanged  ($TARGET)"
+    say "command:  unchanged  ($TARGET)"
     return
   fi
   local verb=installed
@@ -100,7 +96,7 @@ install_bin() {
   mkdir -p "$BINDIR"
   cp "$src" "$TARGET"
   chmod 755 "$TARGET"
-  say "script:   $verb  ($TARGET)"
+  say "command:  $verb  ($TARGET)"
 }
 
 install_md() {
@@ -136,25 +132,25 @@ install_md() {
   say "guidance: $verb  ($CLAUDE_MD)"
 }
 
-# Only ever delete a file this installer wrote. ~/bin is full of the user's own
-# scripts; a name collision must not cost them one.
-ours() { grep -qF 'Installed by install-claude-session.sh' "$1" 2>/dev/null; }
+# Only ever delete a file this installer wrote. ~/bin is full of your own
+# scripts; a name collision must not cost you one.
+ours() { grep -qF 'Installed by install-cohort.sh' "$1" 2>/dev/null; }
 
 uninstall_bin() {
   local found=0 p seen=' '
-  for p in "$TARGET" "$HOME/bin/claude-session" "$HOME/.local/bin/claude-session"; do
+  for p in "$TARGET" "$HOME/bin/cohort" "$HOME/.local/bin/cohort"; do
     [[ -e $p || -L $p ]] || continue
     [[ $seen == *" $p "* ]] && continue
     seen+="$p "
     if ours "$p"; then
       rm -f "$p"
-      say "script:   removed  ($p)"
+      say "command:  removed  ($p)"
       found=1
     else
-      warn "script:   skipped  ($p is not ours — left alone)"
+      warn "command:  skipped  ($p is not ours — left alone)"
     fi
   done
-  [[ $found -eq 1 ]] || say "script:   absent"
+  [[ $found -eq 1 ]] || say "command:  absent"
 }
 
 uninstall_md() {

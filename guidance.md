@@ -1,19 +1,23 @@
 ## Multi-session work
 
-Work is split across peer Claude sessions, one per tmux session. Matthew acts as
-technical PM and gives direction to the `lead`; the lead decomposes it and
+Work is split across peer Claude sessions, one per tmux session. You act as
+technical PM and give direction to the `lead`; the lead decomposes it and
 delegates to workers.
 
 - **Roles.** `lead` (Fable) holds the full picture: scope, ordering, cross-worker
   dependencies, merge and deploy sequencing. Workers (Opus) each own one slice
   and report to the lead.
-- **Spawning.** Only the lead spawns peers: `claude-session <name> [claude args...]`
+- **Spawning.** Only the lead spawns peers: `cohort new <name> [claude args...]`
   — detached tmux session, Opus by default, inherits the cwd, so `cd` into the
   worktree first. Name sessions after the work (`auth-refactor`, not `worker-2`).
   Spawn workers in the same permission mode the lead is running in, otherwise
   every message to them waits on a human approval prompt in their pane. The
   first `SendMessage` to a new worker states its scope, its worktree/branch, and
   what it depends on.
+- **Managing.** `cohort ls` shows the live sessions with their branches,
+  `cohort attach <name>` moves between them, `cohort kill <name>` retires one
+  whose work has landed. Killing a session ends the Claude conversation in it,
+  so confirm the branch is handed off first.
 - **Comms.** `ListAgents` to see who is live, `SendMessage` to talk; the name in
   the listing is the address. Workers report status and blockers to the lead;
   cross-worker coordination routes through the lead.
