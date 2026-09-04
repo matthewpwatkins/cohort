@@ -37,11 +37,13 @@ this section is the summary.
 ## Usage
 
 ```
-cohort new <name> [claude args...]  spawn a detached session named <name>
+cohort new [--command CMD] <name> [claude args...]
+                                    spawn a detached session named <name>
 cohort ls                           list sessions this tool created
 cohort attach <name>                switch to a session (attach when outside tmux)
 cohort kill <name>                  kill one session
 cohort kill --all [--yes]           kill every session this tool created
+cohort config                       show resolved settings and their sources
 cohort help [command]               longer help for a command
 ```
 
@@ -54,6 +56,52 @@ NAME                 BRANCH                 AGE      ATTACHED  DIR
 auth-refactor        feat/auth              4m       no        /home/you/worktrees/auth-refactor
 search-index         feat/search            2h14m    yes       /home/you/worktrees/search-index
 ```
+
+## Settings
+
+Model, permission mode and the launcher itself come from
+`~/.cohort/settings.json`. Every key is optional; `COHORT_CONFIG_DIR` relocates
+the directory.
+
+```json
+{
+  "command": ["env", "CLAUDE_CONFIG_DIR=/home/you/.claude-work", "claude"],
+  "model": "claude-opus-5",
+  "permissionMode": "bypassPermissions",
+  "args": ["--verbose"]
+}
+```
+
+| Key | Effect |
+|---|---|
+| `command` | Launcher to run. A string is split on whitespace; an array is used as exact argv. |
+| `model` | Model flag for new sessions. |
+| `permissionMode` | `--permission-mode` for new sessions. |
+| `args` | Extra arguments added to every session, ahead of yours. |
+
+Each resolves highest-first, and `cohort config` prints which source won:
+
+```
+flag on `cohort new`  >  $COHORT_*  >  settings.json  >  built-in default
+```
+
+**The launcher must be an executable**, because the session is started as argv
+rather than through a shell — a shell alias or function is invisible to it.
+Wrap one with `env`, which is what the array form above does: it is the argv
+equivalent of a `ccw() { CLAUDE_CONFIG_DIR=... claude "$@"; }` function.
+
+**Prefer the file over the environment variables for anything durable.** A
+detached tmux session inherits the tmux server's environment, not your shell's,
+so `COHORT_MODE` and its siblings do not survive into a spawned session — a
+lead cannot pass them on to the workers it spawns, and will fall back to
+defaults or have to reason out the right flags by hand. The settings file is
+read fresh on every invocation, at every hop.
+
+An unrecognised key is reported and ignored, so a typo is visible rather than
+silently inert. A malformed file is fatal rather than ignored, since falling
+back to defaults would spawn sessions you believe you had configured. Reading
+it needs `jq`, or `python3` as a fallback; with neither, only a settings file
+that exists is an error.
 
 ## Install
 
@@ -91,6 +139,9 @@ block was all it contained.
 | Variable | Default | Effect |
 |---|---|---|
 | `COHORT_MODE` | unset | `--permission-mode` handed to new sessions |
+| `COHORT_MODEL` | `claude-opus-5` | Model handed to new sessions |
+| `COHORT_COMMAND` | `claude` | Launcher for new sessions |
+| `COHORT_CONFIG_DIR` | `~/.cohort` | Where `settings.json` lives |
 | `COHORT_BINDIR` | `~/bin` | Install location (same as `--bindir`) |
 | `COHORT_REPO` | `matthewpwatkins/cohort` | Source repo when running off a pipe |
 | `COHORT_REF` | `main` | Tag or branch to install from |
@@ -136,22 +187,47 @@ block was all it contained.
 
 ## Verified
 
-Tested on Linux (tmux 3.4, bash 5.2).
+Tested on Linux (tmux 3.4, bash 5.2), against both a stub launcher and real
+Claude sessions, with unrelated tmux sessions live alongside throughout.
 
-`cohort`, against a stub `claude` and with unrelated tmux sessions live
-alongside: default model, explicit model override, `COHORT_MODE` forwarding,
+**Sessions.** Default model, explicit model override, `COHORT_MODE` forwarding,
 duplicate session name, names containing `:` or `.`, and bare `kill` with no
-argument. `ls` listed only tagged sessions, excluding both a decoy session and
-the surrounding session the test ran inside. `kill` and `attach` each refused
-the decoy by name. `kill --all` refused to run non-interactively without
-`--yes`, and with it removed exactly the tagged sessions, leaving the decoy and
-the surrounding session alive.
+argument. `ls` listed only tagged sessions, excluding both a decoy and the
+session the tests ran inside. `kill` and `attach` each refused the decoy by
+name. `kill --all` refused to run non-interactively without `--yes`, and with it
+removed exactly the tagged sessions and nothing else.
 
-Installer: fresh install, re-run, install onto an existing CLAUDE.md, re-run
+**Settings.** Resolution and precedence for launcher, model, permission mode and
+extra args, across flag, environment variable, settings file and built-in
+default, on both the `jq` and `python3` parser paths. An unknown key warns and
+is ignored; malformed JSON exits non-zero; a settings file with neither parser
+available is a clear error. A launcher given in array form (`env VAR=x claude`)
+reached the spawned process with the variable set, which is how a shell function
+like `ccw` is expressed as argv.
+
+**End to end, real sessions.** Installed via the published one-liner, then two
+workers spawned into separate git worktrees came up on the right branches,
+appeared in `ListAgents` under their session names, and round-tripped
+`SendMessage`. A lead asked in plain language to "spin up a worker" — with the
+tool never named — ran `cohort new` on its own from the CLAUDE.md guidance, and
+matched its own permission mode deliberately.
+
+**Settings across a hop.** A lead spawned from `settings.json` alone, with no
+`COHORT_*` variables set, was asked to stand up a worker. It ran bare
+`cohort new <name>`, and the worker came up with the same launcher, model and
+permission mode as the lead. This is the case the environment variables cannot
+serve: a detached tmux session inherits the tmux server's environment, so
+`tmux show-environment` confirms `COHORT_MODE` is absent inside a spawned
+session even when it was set in the spawning shell.
+
+**Installer.** Fresh install, re-run, install onto an existing CLAUDE.md, re-run
 after a hand-edit inside the block, uninstall with and without other content,
-uninstall twice, `CLAUDE_CONFIG_DIR` and `--bindir` overrides, and a `cohort`
-in the target directory that the installer did not write — reported as skipped
-and left on disk. Uninstall restored the surrounding CLAUDE.md byte-for-byte.
+uninstall twice, `CLAUDE_CONFIG_DIR` and `--bindir` overrides, a piped run that
+downloads its payloads and ignores same-named files in the working directory,
+and a `cohort` in the target directory the installer did not write — reported as
+skipped and left on disk. Uninstall restored a 159-line CLAUDE.md
+byte-for-byte.
 
-Untested: macOS, `attach` against a live client (its refusal path is covered,
-the switch itself is not), and the paradigm itself under real multi-worker load.
+Untested: macOS, and `attach` against a live client (its refusal path is
+covered, the switch itself is not). The paradigm under sustained multi-worker
+load is exercised only as far as the runs above.

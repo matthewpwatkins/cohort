@@ -8,12 +8,17 @@ delegates to workers.
   dependencies, merge and deploy sequencing. Workers (Opus) each own one slice
   and report to the lead.
 - **Spawning.** Only the lead spawns peers: `cohort new <name> [claude args...]`
-  — detached tmux session, Opus by default, inherits the cwd, so `cd` into the
-  worktree first. Name sessions after the work (`auth-refactor`, not `worker-2`).
-  Spawn workers in the same permission mode the lead is running in, otherwise
-  every message to them waits on a human approval prompt in their pane. The
-  first `SendMessage` to a new worker states its scope, its worktree/branch, and
-  what it depends on.
+  — detached tmux session, inherits the cwd, so `cd` into the worktree first.
+  Name sessions after the work (`auth-refactor`, not `worker-2`). The first
+  `SendMessage` to a new worker states its scope, its worktree/branch, and what
+  it depends on.
+- **Launcher settings.** Model, permission mode and launcher come from
+  `~/.cohort/settings.json`; `cohort config` shows what is in effect. Pass a
+  flag to `cohort new` only to deviate from it for one session. Workers must run
+  in the same permission mode as their lead, otherwise every message to them
+  waits on a human approval prompt in their pane — the settings file is what
+  keeps that consistent, since COHORT_* environment variables do not survive
+  into a spawned session.
 - **Managing.** `cohort ls` shows the live sessions with their branches,
   `cohort attach <name>` moves between them, `cohort kill <name>` retires one
   whose work has landed. Killing a session ends the Claude conversation in it,
