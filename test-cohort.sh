@@ -170,18 +170,28 @@ inst() { env HOME="$H" CLAUDE_CONFIG_DIR="$H/.claude" COHORT_CONFIG_DIR="$H/.coh
 says "installs the command"              "inst --no-tmux"             "command:  installed"
 says "is idempotent"                     "inst --no-tmux"             "command:  unchanged"
 [[ -f $H/.claude/CLAUDE.md ]] && ok "writes guidance" || bad "writes guidance"
-[[ -f $H/.bashrc ]] && ok "wires a shell with no rc file" || bad "wires a shell with no rc file"
-says "sources the completion file"       "cat '$H/.bashrc'"           "completion.bash"
+
+# Which rc file that is depends on the platform: bash on macOS reads
+# .bash_profile and never .bashrc, so the installer picks accordingly. The
+# test cares that exactly one was wired, not which.
+wired_rc() {
+  local rc
+  for rc in "$H/.bashrc" "$H/.bash_profile" "$H/.zshrc"; do
+    if [[ -f $rc ]] && grep -q "BEGIN cohort" "$rc"; then printf '%s\n' "$rc"; return 0; fi
+  done
+  return 1
+}
+if RC=$(wired_rc); then ok "wires a shell with no rc file"; else bad "wires a shell with no rc file"; RC=$H/.bashrc; fi
+says "sources the completion file"       "cat '$RC'"                  "completion."
 cmp -s "$SRC/cohort.sh" "$H/bin/cohort" && ok "installed binary matches source" \
   || bad "installed binary matches source"
 
-printf 'export MINE=1\n' >"$H/.bashrc.user"; cat "$H/.bashrc" >>"$H/.bashrc.user"
-mv "$H/.bashrc.user" "$H/.bashrc"
+printf 'export MINE=1\n' >"$TMP/rc.user"; cat "$RC" >>"$TMP/rc.user"; mv "$TMP/rc.user" "$RC"
 printf '# my rules\n' >"$TMP/claude.user"; cat "$H/.claude/CLAUDE.md" >>"$TMP/claude.user"
 mv "$TMP/claude.user" "$H/.claude/CLAUDE.md"
 says "uninstalls the command"            "inst --uninstall"           "command:  removed"
-says "keeps the user's rc content"       "cat '$H/.bashrc'"           "export MINE=1"
-lacks "and removes its own block"        "cat '$H/.bashrc'"           "BEGIN cohort"
+says "keeps the user's rc content"       "cat '$RC'"                  "export MINE=1"
+lacks "and removes its own block"        "cat '$RC'"                  "BEGIN cohort"
 says "keeps the user's CLAUDE.md"        "cat '$H/.claude/CLAUDE.md'" "# my rules"
 lacks "and removes its own block"        "cat '$H/.claude/CLAUDE.md'" "BEGIN cohort"
 [[ -e $H/bin/cohort ]] && bad "binary is gone" || ok "binary is gone"

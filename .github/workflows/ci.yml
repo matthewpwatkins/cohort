@@ -58,10 +58,22 @@ jobs:
         run: command -v tmux && tmux -V
       - name: The installed command runs
         run: $HOME/.local/bin/cohort config
+      # grep exits 2 for a missing file even when it matched another, and which
+      # rc files exist differs per runner, so ask each one separately.
       - name: Completion was wired into a shell
-        run: grep -rl "BEGIN cohort" "$HOME"/.bashrc "$HOME"/.bash_profile "$HOME"/.zshrc 2>/dev/null
+        run: |
+          found=""
+          for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc"; do
+            if [ -f "$rc" ] && grep -q "BEGIN cohort" "$rc"; then found="$rc"; fi
+          done
+          if [ -z "$found" ]; then echo "no shell was wired" >&2; exit 1; fi
+          echo "wired: $found"
       - name: Uninstall is clean
         run: |
           ./install-cohort.sh --uninstall --bindir "$HOME/.local/bin"
           test ! -e "$HOME/.local/bin/cohort"
-          ! grep -rq "BEGIN cohort" "$HOME"/.bashrc "$HOME"/.bash_profile "$HOME"/.zshrc 2>/dev/null
+          for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc"; do
+            if [ -f "$rc" ] && grep -q "BEGIN cohort" "$rc"; then
+              echo "block left behind in $rc" >&2; exit 1
+            fi
+          done
