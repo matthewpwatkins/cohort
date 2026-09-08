@@ -36,7 +36,9 @@ jobs:
             sudo apt-get update && sudo apt-get install -y tmux
           fi
       - name: Versions under test
-        run: ${{ matrix.shell }} --version | head -1; tmux -V
+        run: |
+          ${{ matrix.shell }} --version | head -1
+          tmux -V
       - name: Run the suite
         run: ${{ matrix.shell }} ./test-cohort.sh -v
 
@@ -55,7 +57,7 @@ jobs:
       - name: tmux is present afterwards
         run: command -v tmux && tmux -V
       - name: The installed command runs
-        run: "$HOME/.local/bin/cohort" config
+        run: $HOME/.local/bin/cohort config
       - name: Completion was wired into a shell
         run: grep -rl "BEGIN cohort" "$HOME"/.bashrc "$HOME"/.bash_profile "$HOME"/.zshrc 2>/dev/null
       - name: Uninstall is clean
