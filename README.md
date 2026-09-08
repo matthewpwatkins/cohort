@@ -218,19 +218,21 @@ you can set `"worktree": false` in the settings.json. If you want to launch
 a worktree after setting that flag, just pass `--worktree <name>` in the `cohort new`
 command explicitly.
 
-## How this different from Claude Agent Teams
+## How this is different from Claude Agent Teams
 
 [Claude Agent Teams](https://code.claude.com/docs/en/agent-teams) is an
-experimental feature in claude hidden behind a feature flag. It allows
-agents to spin up specialized subagents that can communicate with each
-other, but these subagents cannot spawn their own subagents, and they die when
-the agent that spawned them dies. Native subagents use their own messaging
-tools and interacting directly with child agents is difficult.
+experimental feature, disabled unless you set
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. A lead session spawns teammates that
+each get their own context window and message each other directly. Teammates
+cannot spawn teammates of their own, the lead is fixed for the life of the
+session, and the team does not outlive it: `/resume` will not bring in-process
+teammates back.
 
-By contrast, cohort spawns sessions as full peer agents, independent
-of the agent that spawned them. They communicate with each other using
-Claude's new [inter-session messaging protocol](https://code.claude.com/docs/en/cross-session-messaging),
-they can spawn their own subagents, and interacting directly with them is seamless.
+By contrast, cohort spawns sessions as full peer agents, independent of whoever
+spawned them. Any session can spawn more, they communicate using Claude's new
+[inter-session messaging protocol](https://code.claude.com/docs/en/cross-session-messaging),
+and each one is an ordinary tmux session you can attach to, detach from, and
+leave running for as long as you like.
 
 ## Updating and uninstalling
 
