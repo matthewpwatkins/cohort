@@ -11,9 +11,14 @@ install-cohort.sh   installs both; --uninstall reverses it
 
 ## Intent
 
-You act as technical PM. You give direction to a single `lead` session; the
-lead decomposes the work, spawns workers, and owns what a worker cannot see —
-merge ordering, deploy sequencing, dependencies between slices.
+You give direction to a single `lead` session; the lead decomposes the work,
+spawns workers, and owns what a worker cannot see — merge ordering,
+deploy sequencing, dependencies between slices.
+
+This is different from Claude's native Agent Teams feature because these workers
+are long-lived and independent of the agent that spawned them. You can interact
+directly with them, or through the lead agent, putting you in the role of technical
+PM instead of manager.
 
 - **One Claude per tmux session**, spawned with `cohort new <name>`.
 - **Peers, not subagents.** Sessions find each other with `ListAgents` and talk
