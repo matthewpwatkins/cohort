@@ -326,11 +326,25 @@ cmd_new() {
   # A worker gets its own branch unless told otherwise, so two of them editing
   # the same repo at once cannot tread on each other. Naming the worktree after
   # the session is what lets `ls` report where the session actually lives.
+  # claude refuses to start at all when handed --worktree outside a repository,
+  # which would surface here as a bare "exited immediately".
   local wtdir='' root
   if [[ $wt_set -eq 0 ]] && ! is_off "${COHORT_WORKTREE:-${SET_WORKTREE:-on}}"; then
-    args+=(--worktree "$name")
-    root=$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null) \
-      && wtdir=$root/.claude/worktrees/$name
+    if root=$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null); then
+      args+=(--worktree "$name")
+      wtdir=$root/.claude/worktrees/$name
+      # claude branches a new worktree off the tracked remote branch, not the
+      # checkout it was launched from, so anything committed locally and not
+      # pushed is invisible to the worker that is about to start.
+      local up ahead
+      if up=$(git -C "$root" rev-parse --abbrev-ref '@{upstream}' 2>/dev/null); then
+        ahead=$(git -C "$root" rev-list --count "$up..HEAD" 2>/dev/null || echo 0)
+        [[ ${ahead:-0} -gt 0 ]] && warn \
+          "cohort: HEAD is $ahead commit(s) ahead of $up; '$name' branches from $up and will not see them"
+      fi
+    else
+      warn "cohort: $PWD is not a git repository — starting '$name' without a worktree"
+    fi
   fi
 
   [[ ${#SET_ARGS[@]} -eq 0 ]] || args+=("${SET_ARGS[@]}")
@@ -342,6 +356,11 @@ cmd_new() {
   local sid
   sid=$(tmux new-session -d -P -F '#{session_id}' -s "$session" -c "$PWD" "${args[@]}")
 
+  # Hold a pane that dies during startup open so its error can be read back.
+  # Turned off again once the session has settled, so that a session the user
+  # exits normally still disappears instead of lingering dead in `ls`.
+  tmux set-option -t "$sid" remain-on-exit on 2>/dev/null || true
+
   # Tag it. A session that died on startup cannot be tagged, and would other-
   # wise look like someone else's session to every later subcommand.
   if ! tmux set-option -t "$sid" "$TAG" 1 2>/dev/null; then
@@ -349,6 +368,28 @@ cmd_new() {
     die "'$name' exited immediately — check the launcher and claude args"
   fi
   [[ -z $wtdir ]] || tmux set-option -t "$sid" "$WT_TAG" "$wtdir" 2>/dev/null || true
+
+  # claude validates against the directory rather than the command line — an
+  # untrusted workspace, or --worktree where one cannot be made — so it starts
+  # cleanly and exits about half a second later. tmux has long since reported
+  # success by then, and without this the failure shows up only as a session
+  # missing from `ls`.
+  local waited=0 dead=0 out
+  while (( waited < 20 )); do
+    [[ $(tmux display-message -p -t "$sid" '#{pane_dead}' 2>/dev/null) == 1 ]] && { dead=1; break; }
+    sleep 0.1
+    waited=$(( waited + 1 ))
+  done
+  if (( dead )); then
+    # "Pane is dead ..." is tmux's own footer, not the launcher's output.
+    out=$(tmux capture-pane -p -S -30 -t "$sid" 2>/dev/null \
+      | sed -e '/^[[:space:]]*$/d' -e '/^Pane is dead/d' | tail -8)
+    tmux kill-session -t "$sid" 2>/dev/null || true
+    warn "cohort: '$name' exited during startup:"
+    [[ -z $out ]] || printf '%s\n' "$out" | sed 's/^/  | /' >&2
+    exit 1
+  fi
+  tmux set-option -t "$sid" remain-on-exit off 2>/dev/null || true
 
   if [[ -n ${TMUX:-} ]]; then
     printf '%s started as tmux session %s (cohort attach %s)\n' "$name" "$session" "$name"
@@ -377,9 +418,10 @@ cmd_ls() {
     return
   fi
   now=$(date +%s)
-  fmt='%-24s %-30s %-8s %-9s %s\n'
-  # shellcheck disable=SC2059
-  printf "$fmt" NAME BRANCH AGE ATTACHED DIR
+  # Build every row first so the columns can be sized to what is actually in
+  # them: session names come from ticket ids as often as from short words.
+  local -a out=()
+  local nw=4 bw=6 line
   # Rows carry the real tmux names; the prefix is noise in a listing where
   # every row has it, and the short name is what the other subcommands take.
   while IFS=$'\t' read -r name path created attached wt; do
@@ -387,11 +429,21 @@ cmd_ls() {
     # about, and only exists once claude has created it.
     [[ -n ${wt:-} && -d $wt ]] && path=$wt
     branch=$(git -C "$path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo -)
+    name=$(short_name "$name")
     age=$(human_age $(( now - created )))
-    # shellcheck disable=SC2059
-    printf "$fmt" \
-      "$(short_name "$name")" "$branch" "$age" "$([[ $attached == 0 ]] && echo no || echo yes)" "$path"
+    if [[ ${#name} -gt $nw ]]; then nw=${#name}; fi
+    if [[ ${#branch} -gt $bw ]]; then bw=${#branch}; fi
+    out+=("$name"$'\t'"$branch"$'\t'"$age"$'\t'"$([[ $attached == 0 ]] && echo no || echo yes)"$'\t'"$path")
   done <<<"$rows"
+
+  fmt="%-${nw}s  %-${bw}s  %-6s  %-8s  %s\n"
+  # shellcheck disable=SC2059
+  printf "$fmt" NAME BRANCH AGE ATTACHED DIR
+  for line in "${out[@]}"; do
+    IFS=$'\t' read -r name branch age attached path <<<"$line"
+    # shellcheck disable=SC2059
+    printf "$fmt" "$name" "$branch" "$age" "$attached" "$path"
+  done
 }
 
 cmd_attach() {

@@ -204,6 +204,15 @@ current branch/repo root by passing `--no-worktree`:
 cohort new auth-refactor --no-worktree
 ```
 
+Claude branches a new worktree from the tracked remote branch rather than from
+your working checkout, so a worker does not inherit commits you made locally but
+have not pushed. cohort warns when your HEAD is ahead of its upstream, so this
+does not surprise you halfway through a session:
+
+```
+cohort: HEAD is 3 commit(s) ahead of origin/main; 'auth-refactor' branches from origin/main and will not see them
+```
+
 Or if you want to disable worktrees on all `cohort new` commands by default,
 you can set `"worktree": false` in the settings.json. If you want to launch
 a worktree after setting that flag, just pass `--worktree <name>` in the `cohort new`
