@@ -1,5 +1,7 @@
 # cohort
 
+[![ci](https://github.com/matthewpwatkins/cohort/actions/workflows/ci.yml/badge.svg)](https://github.com/matthewpwatkins/cohort/actions/workflows/ci.yml)
+
 A lightweight orchestrator for running parallel and persistent
 Claude Code sessions on Mac and Linux.
 
