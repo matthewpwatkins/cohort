@@ -268,11 +268,17 @@ uninstall_completion() {
     [[ -f $rc ]] || continue
     grep -qF "$RC_BEGIN" "$rc" || continue
     body=$(strip_block "$RC_BEGIN" "$RC_END" <"$rc" | trim_trailing_blank)
-    printf '%s\n' "$body" >"$rc"
+    if [[ -z $body ]]; then
+      # The only thing in it was our block, so this is an rc file we created
+      # on a machine that had none. Leaving an empty one behind is litter.
+      rm -f "$rc"
+    else
+      printf '%s\n' "$body" >"$rc"
+    fi
     found=1
   done
   rm -f "$COHORT_DIR/completion.bash" "$COHORT_DIR/completion.zsh"
-  [[ $found -eq 1 ]] && say "completion: removed" || say "completion: absent"
+  if [[ $found -eq 1 ]]; then say "completion: removed"; else say "completion: absent"; fi
 }
 
 # Only ever delete a file this installer wrote. ~/bin is full of your own

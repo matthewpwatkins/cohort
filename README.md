@@ -21,7 +21,8 @@ password if the package manager needs root). Completion applies to shells you
 open from then on.
 
 Pass `--bindir DIR` to install the command somewhere other than `~/bin`, or
-`--no-tmux` to leave the tmux check alone.
+`--no-tmux` to leave the tmux check alone. cohort needs tmux 3.0 or newer and
+bash 3.2 or newer, which is what macOS ships.
 
 ## Usage
 
@@ -233,6 +234,25 @@ spawned them. Any session can spawn more, they communicate using Claude's new
 [inter-session messaging protocol](https://code.claude.com/docs/en/cross-session-messaging),
 and each one is an ordinary tmux session you can attach to, detach from, and
 leave running for as long as you like.
+
+## Contributing
+
+`./test-cohort.sh` runs the suite. It spawns sessions against a stub launcher
+instead of claude, so it needs no credentials and no network, and it works in a
+temporary HOME so your own config, sessions and shell files are never touched.
+Add `-v` to see each assertion.
+
+```bash
+./test-cohort.sh
+```
+
+CI runs it on Linux and macOS, under stock `/bin/bash` on the mac so the 3.2
+support is real rather than assumed, along with shellcheck and a full
+install/uninstall round trip on both.
+
+A few behaviours only real claude can show, and the suite does not cover them:
+worktree creation refuses in a directory whose workspace trust you have not
+accepted yet, and a new worktree branches from the tracked remote branch.
 
 ## Updating and uninstalling
 

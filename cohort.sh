@@ -210,7 +210,24 @@ for k in d:
   [[ ${#cargs[@]} -eq 0 ]] || SET_COMMAND=${cargs[*]}
 }
 
-need_tmux() { command -v tmux >/dev/null || die "tmux not found"; }
+# `tagged` reads the tag through a #{@user-option} format, which older tmux
+# does not interpolate: it returns empty for every session, so nothing looks
+# like a cohort session and every subcommand quietly does nothing. Fail with a
+# reason instead. An unparseable version (a self-built "master") is let through
+# rather than blocked on a guess.
+TMUX_MIN_MAJOR=3
+need_tmux() {
+  command -v tmux >/dev/null || die "tmux not found"
+  local v major
+  v=$(tmux -V 2>/dev/null) || return 0
+  v=${v#tmux }; v=${v#next-}
+  major=${v%%.*}
+  case $major in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  (( major >= TMUX_MIN_MAJOR )) \
+    || die "tmux $v is too old — cohort needs ${TMUX_MIN_MAJOR}.0 or newer"
+}
 
 # Settings and environment both carry the worktree switch as free text, so one
 # place decides what counts as off. Anything else, including an empty string
@@ -353,16 +370,17 @@ cmd_new() {
   # Capture the session id rather than re-targeting by name: set-option does
   # not accept the "=" exact-match prefix, and an id cannot prefix-match some
   # other session the way a bare name can.
+  # Hold a pane that dies during startup open so its error can be read back,
+  # set in the same tmux invocation that creates the session: a launcher that
+  # fails instantly can otherwise be gone before a second call lands. Turned
+  # off again once the session has settled, so that a session the user exits
+  # normally still disappears instead of lingering dead in `ls`.
   local sid
-  sid=$(tmux new-session -d -P -F '#{session_id}' -s "$session" -c "$PWD" "${args[@]}")
+  sid=$(tmux new-session -d -P -F '#{session_id}' -s "$session" -c "$PWD" "${args[@]}" \
+        ';' set-option -t "$session" remain-on-exit on)
 
-  # Hold a pane that dies during startup open so its error can be read back.
-  # Turned off again once the session has settled, so that a session the user
-  # exits normally still disappears instead of lingering dead in `ls`.
-  tmux set-option -t "$sid" remain-on-exit on 2>/dev/null || true
-
-  # Tag it. A session that died on startup cannot be tagged, and would other-
-  # wise look like someone else's session to every later subcommand.
+  # Tag it. An untagged session would look like someone else's to every later
+  # subcommand, so a failure here is fatal rather than cosmetic.
   if ! tmux set-option -t "$sid" "$TAG" 1 2>/dev/null; then
     session_exists "$session" && die "started '$name' but could not tag it"
     die "'$name' exited immediately — check the launcher and claude args"

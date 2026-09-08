@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: shellcheck -S warning cohort.sh install-cohort.sh test-cohort.sh
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shell: bash
+          # macOS ships bash 3.2, which is the oldest bash cohort claims to
+          # support. Running the suite under /bin/bash there is the whole
+          # point of this leg, so do not "fix" it to the brew bash on PATH.
+          - os: macos-latest
+            shell: /bin/bash
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tmux
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew install tmux
+          else
+            sudo apt-get update && sudo apt-get install -y tmux
+          fi
+      - name: Versions under test
+        run: ${{ matrix.shell }} --version | head -1; tmux -V
+      - name: Run the suite
+        run: ${{ matrix.shell }} ./test-cohort.sh -v
+
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # No tmux preinstalled here on purpose: this leg checks that the
+      # installer puts it there itself, which is the path a new user takes.
+      - name: Install from the checkout
+        run: ./install-cohort.sh --bindir "$HOME/.local/bin"
+      - name: tmux is present afterwards
+        run: command -v tmux && tmux -V
+      - name: The installed command runs
+        run: "$HOME/.local/bin/cohort" config
+      - name: Completion was wired into a shell
+        run: grep -rl "BEGIN cohort" "$HOME"/.bashrc "$HOME"/.bash_profile "$HOME"/.zshrc 2>/dev/null
+      - name: Uninstall is clean
+        run: |
+          ./install-cohort.sh --uninstall --bindir "$HOME/.local/bin"
+          test ! -e "$HOME/.local/bin/cohort"
+          ! grep -rq "BEGIN cohort" "$HOME"/.bashrc "$HOME"/.bash_profile "$HOME"/.zshrc 2>/dev/null
