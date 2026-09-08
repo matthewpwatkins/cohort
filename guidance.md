@@ -8,10 +8,11 @@ delegates to workers.
   dependencies, merge and deploy sequencing. Workers (Opus) each own one slice
   and report to the lead.
 - **Spawning.** Only the lead spawns peers: `cohort new <name> [claude args...]`
-  — detached tmux session, inherits the cwd, so `cd` into the worktree first.
-  Name sessions after the work (`auth-refactor`, not `worker-2`). The first
-  `SendMessage` to a new worker states its scope, its worktree/branch, and what
-  it depends on.
+  — detached tmux session named `cohort-<name>`, inherits the cwd, so `cd` into
+  the worktree first. Name sessions after the work (`auth-refactor`, not
+  `worker-2`); `cohort attach`, `ls` and `kill` all take the bare name. The
+  first `SendMessage` to a new worker states its scope, its worktree/branch,
+  and what it depends on.
 - **Launcher settings.** Model, permission mode and launcher come from
   `~/.cohort/settings.json`; `cohort config` shows what is in effect. Pass a
   flag to `cohort new` only to deviate from it for one session. Workers must run

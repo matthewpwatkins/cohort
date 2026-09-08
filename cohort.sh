@@ -2,15 +2,17 @@
 #
 # cohort — run a group of peer Claude Code sessions, one per tmux session.
 #
-# Sessions this tool creates are tagged with a tmux user option, so `ls`,
-# `attach` and `kill` only ever act on its own sessions and leave the rest of
-# your tmux server alone. Run `cohort help` for the subcommand list.
+# Sessions this tool creates are named with a fixed prefix and tagged with a
+# tmux user option, so `ls`, `attach` and `kill` only ever act on its own
+# sessions and leave the rest of your tmux server alone. Run `cohort help` for
+# the subcommand list.
 #
 # Installed by install-cohort.sh — local edits will be overwritten.
 
 set -euo pipefail
 
 TAG=@cohort
+PREFIX=cohort-
 DEFAULT_COMMAND=claude
 DEFAULT_MODEL=claude-opus-5
 CONFIG_DIR=${COHORT_CONFIG_DIR:-$HOME/.cohort}
@@ -24,7 +26,7 @@ usage() {
 usage: cohort <command> [args]
 
   new [--command CMD] <name> [claude args...]
-                               spawn a detached session named <name>
+                               spawn a detached session named cohort-<name>
   ls                           list sessions this tool created
   attach <name>                switch to a session (attach when outside tmux)
   kill <name>                  kill one session
@@ -33,6 +35,7 @@ usage: cohort <command> [args]
   help [command]               longer help for a command
 
 Everything after <name> in `new` passes through to claude verbatim.
+Sessions are tmux sessions named cohort-<name>; subcommands take <name>.
 USAGE
   exit "${1:-0}"
 }
@@ -42,8 +45,10 @@ help_topic() {
     new) cat <<'H'
 cohort new [--command CMD] <name> [claude args...]
 
-Starts a detached tmux session named <name> running Claude Code, tagged so the
-other subcommands recognise it. Extra args pass through to claude verbatim.
+Starts a detached tmux session named cohort-<name> running Claude Code, tagged
+so the other subcommands recognise it. The prefix keeps the session clear of
+tmux sessions you started yourself; every subcommand takes the bare <name> and
+adds it back. Extra args pass through to claude verbatim.
 
 Inherits $PWD, so cd into a worktree before spawning that worktree's worker.
 Safe to run from inside tmux: it never steals your pane.
@@ -65,23 +70,25 @@ H
 cohort ls
 
 One row per tagged session: name, git branch of its working directory, age,
-whether a client is attached, and the directory itself. Sessions started by
+whether a client is attached, and the directory itself. Names print without the
+cohort- prefix, which is what the other subcommands take. Sessions started by
 anything other than cohort are not listed.
 H
 ;;
     attach) cat <<'H'
 cohort attach <name>
 
-Inside tmux, switches the current client to <name>. Outside tmux, attaches.
-Refuses sessions cohort did not create — use tmux directly for those.
+Equivalent to `tmux attach -t cohort-<name>`, except that inside tmux it
+switches the current client instead of nesting. Refuses sessions cohort did not
+create — use tmux directly for those.
 H
 ;;
     kill) cat <<'H'
 cohort kill <name>
 cohort kill --all [--yes]
 
-Kills tagged sessions. Refuses any session cohort did not create, so a name
-collision with your own tmux session cannot cost you that session.
+Kills tagged sessions, given the bare <name>. Refuses any session cohort did
+not create, so nothing outside the cohort- prefix is ever at risk.
 
 Killing a session discards the Claude conversation running in it and leaves
 whatever is uncommitted in its worktree untouched but unattended. There is no
@@ -182,6 +189,13 @@ for k in d:
 
 need_tmux() { command -v tmux >/dev/null || die "tmux not found"; }
 
+# Every tmux session this tool creates is named "cohort-<name>", so a worker
+# called `auth` cannot collide with a hand-rolled tmux session of that name.
+# Subcommands take the short name; typing the prefixed name works too, so
+# copying a name out of `tmux ls` does the expected thing.
+full_name()  { printf '%s%s' "$PREFIX" "${1#"$PREFIX"}"; }
+short_name() { printf '%s' "${1#"$PREFIX"}"; }
+
 # True when <name> is a live session that cohort created. The tag is a tmux
 # user option, not a naming convention, so unrelated sessions can never match.
 #
@@ -227,10 +241,13 @@ cmd_new() {
   done
 
   [[ $# -ge 1 && $1 != -* ]] || usage 2
-  local name=$1; shift
+  local name session
+  name=$(short_name "$1"); shift
   case $name in
+    '') die "session name cannot be just '$PREFIX'" ;;
     *:*|*.*) die "session name cannot contain ':' or '.'" ;;
   esac
+  session=$(full_name "$name")
 
   need_tmux
 
@@ -243,7 +260,7 @@ cmd_new() {
   command -v "${program[0]}" >/dev/null \
     || die "'${program[0]}' not found (a shell alias or function cannot be used — see 'cohort help config')"
 
-  ! session_exists "$name" || die "'$name' already exists"
+  ! session_exists "$session" || die "'$name' already exists (tmux session $session)"
 
   # Seed the array so it is never empty: bash 3.2 (stock macOS) errors on
   # expanding an empty array under `set -u`.
@@ -268,19 +285,19 @@ cmd_new() {
   # not accept the "=" exact-match prefix, and an id cannot prefix-match some
   # other session the way a bare name can.
   local sid
-  sid=$(tmux new-session -d -P -F '#{session_id}' -s "$name" -c "$PWD" "${args[@]}")
+  sid=$(tmux new-session -d -P -F '#{session_id}' -s "$session" -c "$PWD" "${args[@]}")
 
   # Tag it. A session that died on startup cannot be tagged, and would other-
   # wise look like someone else's session to every later subcommand.
   if ! tmux set-option -t "$sid" "$TAG" 1 2>/dev/null; then
-    session_exists "$name" && die "started '$name' but could not tag it"
+    session_exists "$session" && die "started '$name' but could not tag it"
     die "'$name' exited immediately — check the launcher and claude args"
   fi
 
   if [[ -n ${TMUX:-} ]]; then
-    printf '%s started (cohort attach %s)\n' "$name" "$name"
+    printf '%s started as tmux session %s (cohort attach %s)\n' "$name" "$session" "$name"
   else
-    tmux attach -t "=$name"
+    tmux attach -t "=$session"
   fi
 }
 
@@ -294,23 +311,27 @@ cmd_ls() {
   fi
   now=$(date +%s)
   printf '%-20s %-22s %-8s %-9s %s\n' NAME BRANCH AGE ATTACHED DIR
+  # Rows carry the real tmux names; the prefix is noise in a listing where
+  # every row has it, and the short name is what the other subcommands take.
   while IFS=$'\t' read -r name path created attached; do
     branch=$(git -C "$path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo -)
     age=$(human_age $(( now - created )))
     printf '%-20s %-22s %-8s %-9s %s\n' \
-      "$name" "$branch" "$age" "$([[ $attached == 0 ]] && echo no || echo yes)" "$path"
+      "$(short_name "$name")" "$branch" "$age" "$([[ $attached == 0 ]] && echo no || echo yes)" "$path"
   done <<<"$rows"
 }
 
 cmd_attach() {
   [[ $# -eq 1 ]] || usage 2
   need_tmux
-  session_exists "$1" || die "no session '$1'"
-  is_ours "$1" || die "'$1' is not a cohort session — use 'tmux attach -t $1'"
+  local session
+  session=$(full_name "$1")
+  session_exists "$session" || die "no session '$(short_name "$1")'"
+  is_ours "$session" || die "'$session' is not a cohort session — use 'tmux attach -t $session'"
   if [[ -n ${TMUX:-} ]]; then
-    tmux switch-client -t "=$1"
+    tmux switch-client -t "=$session"
   else
-    tmux attach -t "=$1"
+    tmux attach -t "=$session"
   fi
 }
 
@@ -324,7 +345,7 @@ cmd_kill() {
       --all) all=1 ;;
       -y|--yes) yes=1 ;;
       -*) die "unknown option: $1" ;;
-      *) names+=("$1") ;;
+      *) names+=("$(full_name "$1")") ;;
     esac
     shift
   done
@@ -338,7 +359,9 @@ cmd_kill() {
     count=${#names[@]}
     if [[ $yes -eq 0 ]]; then
       [[ -t 0 ]] || die "refusing --all without --yes when not interactive"
-      printf 'kill %d cohort session(s): %s\n' "$count" "${names[*]}"
+      local shortnames=()
+      for line in "${names[@]}"; do shortnames+=("$(short_name "$line")"); done
+      printf 'kill %d cohort session(s): %s\n' "$count" "${shortnames[*]}"
       read -r -p 'proceed? [y/N] ' reply
       [[ $reply == [yY]* ]] || { echo "cancelled"; return; }
     fi
@@ -349,13 +372,13 @@ cmd_kill() {
   local name rc=0
   for name in "${names[@]}"; do
     if ! session_exists "$name"; then
-      warn "cohort: no session '$name'"; rc=1; continue
+      warn "cohort: no session '$(short_name "$name")'"; rc=1; continue
     fi
     if ! is_ours "$name"; then
       warn "cohort: skipped '$name' — not a cohort session"; rc=1; continue
     fi
     tmux kill-session -t "=$name"
-    echo "killed $name"
+    echo "killed $(short_name "$name")"
   done
   return $rc
 }

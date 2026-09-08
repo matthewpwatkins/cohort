@@ -20,7 +20,8 @@ are long-lived and independent of the agent that spawned them. You can interact
 directly with them, or through the lead agent, putting you in the role of technical
 PM instead of manager.
 
-- **One Claude per tmux session**, spawned with `cohort new <name>`.
+- **One Claude per tmux session**, spawned with `cohort new <name>` and living
+  under the `cohort-` prefix, clear of the tmux sessions you run yourself.
 - **Peers, not subagents.** Sessions find each other with `ListAgents` and talk
   with `SendMessage`. A worker is a full session you can attach to, not a
   nested subagent hidden inside the lead.
@@ -39,11 +40,32 @@ The rules the sessions themselves are taught live in `guidance.md`, which the
 installer writes into your CLAUDE.md. That file is the behavioural contract;
 this section is the summary.
 
+## Example usage
+
+```console
+$ cd ~/worktrees/auth-refactor
+$ cohort new auth-refactor
+auth-refactor started as tmux session cohort-auth-refactor (cohort attach auth-refactor)
+
+$ cohort ls
+NAME                 BRANCH                 AGE      ATTACHED  DIR
+auth-refactor        feat/auth              4m       no        /home/you/worktrees/auth-refactor
+search-index         feat/search            2h14m    yes       /home/you/worktrees/search-index
+
+$ cohort attach search-index      # same as: tmux attach -t cohort-search-index
+
+$ cohort kill auth-refactor
+killed auth-refactor
+```
+
+Subcommands take the bare name; the `cohort-` prefix is added for you, and
+passing the prefixed name works too.
+
 ## Usage
 
 ```
 cohort new [--command CMD] <name> [claude args...]
-                                    spawn a detached session named <name>
+                                    spawn a detached session named cohort-<name>
 cohort ls                           list sessions this tool created
 cohort attach <name>                switch to a session (attach when outside tmux)
 cohort kill <name>                  kill one session
@@ -52,15 +74,7 @@ cohort config                       show resolved settings and their sources
 cohort help [command]               longer help for a command
 ```
 
-```console
-$ cd ~/worktrees/auth-refactor && cohort new auth-refactor
-auth-refactor started (cohort attach auth-refactor)
-
-$ cohort ls
-NAME                 BRANCH                 AGE      ATTACHED  DIR
-auth-refactor        feat/auth              4m       no        /home/you/worktrees/auth-refactor
-search-index         feat/search            2h14m    yes       /home/you/worktrees/search-index
-```
+Sessions are tmux sessions named `cohort-<name>`; subcommands take `<name>`.
 
 ## Settings
 
@@ -154,10 +168,17 @@ block was all it contained.
 
 ## Design notes
 
+- **Sessions live under a `cohort-` prefix.** The tmux session for worker
+  `auth` is `cohort-auth`, so a worker never collides with a tmux session you
+  started by hand, and `tmux ls` shows at a glance which sessions belong to a
+  cohort. Every subcommand takes the short name and adds the prefix, so
+  `cohort attach auth` is `tmux attach -t cohort-auth`; `ls` strips it back off
+  for display, and a prefixed name given on the command line is accepted as-is
+  rather than doubled.
 - **Sessions are tagged, not name-matched.** `new` sets a tmux user option
   (`@cohort`) on the session it creates, and `ls`, `attach` and `kill` filter on
   that tag. Your other tmux sessions are invisible to this tool, so `kill`
-  cannot take one out on a name collision — the same guarantee the installer
+  cannot take one out even inside the prefix — the same guarantee the installer
   gives `~/bin` by checking for its own sentinel before deleting anything.
 - **The tag is set via the session id returned by `new-session -P`.** Retargeting
   by name would be both prefix-matchable and inconsistent: `set-option -t =name`
@@ -200,7 +221,10 @@ duplicate session name, names containing `:` or `.`, and bare `kill` with no
 argument. `ls` listed only tagged sessions, excluding both a decoy and the
 session the tests ran inside. `kill` and `attach` each refused the decoy by
 name. `kill --all` refused to run non-interactively without `--yes`, and with it
-removed exactly the tagged sessions and nothing else.
+removed exactly the tagged sessions and nothing else. With an untagged tmux
+session `alpha` already live, `cohort new alpha` created `cohort-alpha`
+alongside it, and `ls`, `attach` and `kill` all resolved to the prefixed one;
+`cohort new cohort-beta` produced `cohort-beta`, not `cohort-cohort-beta`.
 
 **Settings.** Resolution and precedence for launcher, model, permission mode and
 extra args, across flag, environment variable, settings file and built-in
