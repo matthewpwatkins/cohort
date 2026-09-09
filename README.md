@@ -23,9 +23,25 @@ completion into every shell you have — bash, zsh and fish, with fish getting a
 autoloaded completion file rather than an rc edit. Completion applies to shells
 you open from then on.
 
-If [tmux](https://github.com/tmux/tmux/wiki/Getting-Started) is missing it offers
-to install it (via brew, apt, dnf, yum, zypper, pacman or apk) and waits for you
-to say yes, since that is the one step that reaches outside your own files.
+[tmux](https://github.com/tmux/tmux/wiki/Getting-Started) is checked first,
+before anything is written. Every cohort session is a tmux session, so if it is
+missing the installer offers to install it (via brew, apt, dnf, yum, zypper,
+pacman or apk) and waits for you to say yes — that is the one step reaching
+outside your own files. Say no and nothing is installed at all, rather than
+leaving you a command that cannot run:
+
+```
+tmux
+  missing   cohort runs every session in tmux
+  Install it with: sudo apt-get install -y tmux ? [Y/n] n
+  declined  left tmux alone
+
+Stopped
+  nothing was installed — cohort runs every session in tmux
+  install tmux and run this again, or pass --no-tmux to install without it
+```
+
+A normal run looks like this:
 
 ```
 Command

@@ -226,6 +226,38 @@ says "an exotic login shell is refused, not guessed at" \
   "wire_case exotic /usr/bin/nu" "is not supported"
 lacks "and nothing is written for it" "wire_case exotic2 /usr/bin/nu" "added"
 
+group "tmux is a hard dependency"
+# A PATH with everything the installer needs except tmux, so the dependency
+# check is the thing that fails rather than some coreutil.
+NOTMUX=$TMP/notmux-bin
+mkdir -p "$NOTMUX"
+for t in bash sh dirname basename mktemp cp chmod cat grep awk sed id uname rm mkdir cmp tr cut curl; do
+  t_path=$(command -v "$t" 2>/dev/null) && ln -sf "$t_path" "$NOTMUX/$t"
+done
+# Present so a package manager is found, but it never actually produces tmux.
+printf '#!/bin/sh\nexit 0\n' >"$NOTMUX/apt-get"; chmod +x "$NOTMUX/apt-get"
+# Without this the run stops at "need root" before ever reaching the question.
+printf '#!/bin/sh\nexec "$@"\n' >"$NOTMUX/sudo"; chmod +x "$NOTMUX/sudo"
+
+# shellcheck disable=SC2120  # callers pass installer flags; no args is valid
+notmux_case() {
+  local h=$TMP/notmux-home
+  rm -rf "$h"; mkdir -p "$h"; printf '# rc\n' >"$h/.bashrc"
+  env HOME="$h" SHELL=/bin/bash XDG_CONFIG_HOME="$h/.config" CLAUDE_CONFIG_DIR="$h/.claude" \
+      COHORT_CONFIG_DIR="$h/.cohort" COHORT_BINDIR="$h/bin" PATH="$NOTMUX" \
+      "$NOTMUX/bash" "$INSTALLER" "$@" 2>&1
+}
+says "tmux is checked before anything is written" "notmux_case" "nothing was installed"
+says "and it is clear it could not ask"           "notmux_case" "no terminal to ask on"
+notmux_case >/dev/null 2>&1
+[[ -e $TMP/notmux-home/bin/cohort ]] && bad "the command is not left behind" \
+  || ok "the command is not left behind"
+[[ -e $TMP/notmux-home/.claude/CLAUDE.md ]] && bad "guidance is not left behind" \
+  || ok "guidance is not left behind"
+lacks "and the rc file is untouched" "cat '$TMP/notmux-home/.bashrc'" "BEGIN cohort"
+says "a tmux install that does not work stops the run" "notmux_case --yes" "nothing was installed"
+says "--no-tmux installs without it"                   "notmux_case --no-tmux" "installed"
+
 group "PATH and readiness"
 path_case() {
   local label=$1 path=$2

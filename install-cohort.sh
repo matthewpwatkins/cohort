@@ -117,10 +117,10 @@ confirm() {
   (( ASSUME_YES )) && return 0
   # The file can exist and still not be openable when the process has no
   # controlling terminal, which is exactly the case worth detecting.
-  { : >/dev/tty; } 2>/dev/null || return 1
+  { : >/dev/tty; } 2>/dev/null || return 2
   local reply
   printf '  %s [Y/n] ' "$1" >/dev/tty
-  read -r reply </dev/tty || return 1
+  read -r reply </dev/tty || return 2
   [[ -z $reply || $reply == [yY]* ]]
 }
 
@@ -246,8 +246,7 @@ install_tmux() {
   elif command -v apk     >/dev/null; then mgr=(apk add tmux)
   else
     status missing "no supported package manager found"
-    note "cohort runs every session in tmux — install it, then re-run this"
-    return
+    return 1
   fi
 
   # Homebrew refuses to run as root and manages its own prefix; everything
@@ -258,17 +257,21 @@ install_tmux() {
       run=(sudo "${mgr[@]}")
     else
       status missing "need root to run '${mgr[*]}'"
-      return
+      return 1
     fi
   fi
 
   # Installing a system package is the one thing here that reaches outside the
   # user's own files, so it is the one thing worth asking about.
   status missing "cohort runs every session in tmux"
-  if ! confirm "Install it with: ${run[*]} ?"; then
-    status skipped "install tmux yourself, then re-run this"
-    note "or re-run with --yes to install it without asking"
-    return
+  local answer=0
+  confirm "Install it with: ${run[*]} ?" || answer=$?
+  if (( answer == 2 )); then
+    status skipped "no terminal to ask on — re-run with --yes to install it"
+    return 1
+  elif (( answer )); then
+    status declined "left tmux alone"
+    return 1
   fi
 
   status installing "${run[*]}"
@@ -288,7 +291,8 @@ install_tmux() {
   if command -v tmux >/dev/null; then
     status installed "$(command -v tmux)"
   else
-    status failed "'${run[*]}' did not produce tmux — install it yourself"
+    status failed "'${run[*]}' did not produce tmux"
+    return 1
   fi
 }
 
@@ -462,11 +466,22 @@ uninstall_md() {
 
 if [[ $MODE == install ]]; then
   banner
+
+  # Every cohort session is a tmux session, so this is a dependency rather than
+  # a nicety. Check it first: nothing else is worth writing to disk if the
+  # answer is no, and finding out afterwards would leave a half-useful install.
+  if [[ $WANT_TMUX -eq 1 ]] && ! install_tmux; then
+    section "Stopped"
+    printf '  nothing was installed — cohort runs every session in tmux\n'
+    note "install tmux and run this again, or pass --no-tmux to install without it"
+    printf '\n'
+    exit 1
+  fi
+
   install_bin
   tidy_old_bin
   install_md
   install_completion
-  [[ $WANT_TMUX -eq 1 ]] && install_tmux
 
   # Say plainly whether the command works right now, because "installed" and
   # "usable in this shell" are not the same thing when PATH had to change.
