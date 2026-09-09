@@ -102,7 +102,7 @@ banner() {
 | (__ | (_) || | | || (_) || |   | |_
  \___| \___/ |_| |_| \___/ |_|    \__|
 ART
-  printf '%s  peer Claude Code sessions, one per tmux session%s\n' "$DIM" "$RESET"
+  printf '%s  Organize your Claudes%s\n' "$DIM" "$RESET"
 }
 
 section() { printf '\n%s%s%s\n' "$BOLD" "$1" "$RESET"; }
