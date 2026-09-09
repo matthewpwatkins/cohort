@@ -76,10 +76,16 @@ needs tmux 3.0 or newer and bash 3.2 or newer, which is what macOS ships.
 ### Creating sessions
 
 ```bash
-cohort new lead             # Creates a new tmux session called cohort-lead
+cohort new lead -W          # Creates a new tmux session called cohort-lead
                             # and spawns a Claude Code session named lead
                             # inside that tmux session
 ```
+
+`-W` is short for `--no-worktree`. Sessions get their own git worktree by
+default, which is what you want for a worker that is going to write code, and
+usually not what you want for the lead: a lead reads the repo, delegates, and
+sequences merges, so it belongs on your actual checkout where it can see the
+branches its workers are producing. Leave `-W` off for the workers.
 
 Then, while inside the lead Claude session, tell Claude:
 
@@ -92,10 +98,10 @@ and coordinate their work. You can see these sessions and interact with them ind
 
 ```bash
 $ cohort ls
-NAME                      BRANCH                         AGE      ATTACHED  DIR
-lead                      main                                     20m      yes       /home/you/project
-JIRA-1234-add-crud-ops    worktree-JIRA-1234-add-crud-ops          4m       no        /home/you/project/.claude/worktrees/JIRA-1234-add-crud-ops
-JIRA-1235-unit-tests      worktree-JIRA-1235-unit-tests            16m      no        /home/you/project/.claude/worktrees/JIRA-1235-unit-tests
+#   NAME                    BRANCH                           AGE  ATTACHED  DIR
+1   JIRA-1234-add-crud-ops  worktree-JIRA-1234-add-crud-ops  4m   no        /home/you/project/.claude/worktrees/JIRA-1234-add-crud-ops
+2   JIRA-1235-unit-tests    worktree-JIRA-1235-unit-tests    16m  no        /home/you/project/.claude/worktrees/JIRA-1235-unit-tests
+3   lead                    main                             20m  yes       /home/you/project
 ```
 
 The lead session is on your checkout and the workers are each on their own
@@ -129,11 +135,28 @@ There is a pre-existing test failure both workers found. Ignore the test or fix 
 But you may find it helpful to join the worker sessions yourself to give guidance, rotating through each of them
 like an architect stopping by each team member's desk to check in and answer questions.
 
-Use the `cohort attach` (or `cohort a`) command with the session name (auto-complete works):
+Use the `cohort attach` (or `cohort a`) command with the session name
+(auto-complete works), or the number from the `#` column:
 
 ```bash
 $ cohort attach JIRA-1234-add-crud-ops
+$ cohort a 1                    # same session, less typing
 ```
+
+With no argument at all it lists the sessions and asks which one, so you do not
+have to run `cohort ls` first to remember what is running:
+
+```bash
+$ cohort a
+#   NAME                    BRANCH                           AGE  ATTACHED  DIR
+1   JIRA-1234-add-crud-ops  worktree-JIRA-1234-add-crud-ops  4m   no        /home/you/project/.claude/worktrees/JIRA-1234-add-crud-ops
+2   JIRA-1235-unit-tests    worktree-JIRA-1235-unit-tests    16m  no        /home/you/project/.claude/worktrees/JIRA-1235-unit-tests
+3   lead                    main                             20m  yes       /home/you/project
+
+attach which? [number or name] 2
+```
+
+When only one session is running it goes straight there without asking.
 
 All sessions are [tmux](https://github.com/tmux/tmux/wiki/Getting-Started) sessions under the hood so all your familiar tmux commands work as well:
 
@@ -249,7 +272,7 @@ Worker agents in the cohort each get their own Claude/Git worktree/branch by def
 current branch/repo root by passing `--no-worktree`:
 
 ```bash
-cohort new auth-refactor --no-worktree
+cohort new auth-refactor --no-worktree     # or -W
 ```
 
 Claude branches a new worktree from the tracked remote branch rather than from

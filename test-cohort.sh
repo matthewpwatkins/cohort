@@ -151,7 +151,31 @@ says "--names is bare"                   "'$COHORT' ls --names"       "wt-defaul
 lacks "--names has no header"            "'$COHORT' ls --names"       "NAME"
 spawn a-very-long-session-name-for-column-alignment --no-worktree
 says "long names do not break alignment" \
-  "'$COHORT' ls | awk 'NR>1 {print \$2}' | sort -u | head -1" "main"
+  "'$COHORT' ls | awk 'NR>1 {print \$3}' | sort -u | head -1" "main"
+
+says "ls numbers the rows"               "'$COHORT' ls"               "#"
+spawn short-w -W
+lacks "-W is the short form of --no-worktree" "argv_of short-w"     "--worktree"
+
+group "attach takes a name or a number"
+# Sourced in a subshell so cohort's own `set -e` cannot leak into the suite,
+# and so resolution can be observed without a terminal to attach to.
+# shellcheck source=cohort.sh disable=SC1091
+resolve_via() { ( source "$COHORT" 2>/dev/null; resolve_session "$1" && printf '%s' "$PICKED" ); }
+first=$("$COHORT" ls --names | sed -n 1p)
+second=$("$COHORT" ls --names | sed -n 2p)
+says "1 resolves to the first row"       "resolve_via 1"              "cohort-$first"
+says "2 resolves to the second row"      "resolve_via 2"              "cohort-$second"
+says "a name still resolves"             "resolve_via '$second'"      "cohort-$second"
+lacks "an out-of-range number does not"  "resolve_via 99"             "cohort-"
+lacks "and neither does an unknown name" "resolve_via nope"           "cohort-"
+says "attach rejects an unknown number"  "'$COHORT' attach 99"        "no session '99'"
+# A session named for a digit must beat the index of the same digit.
+spawn 2 --no-worktree
+says "a name beats an index"             "resolve_via 2"              "cohort-2"
+"$COHORT" kill 2 >/dev/null 2>&1
+says "attach without a name needs a terminal" \
+  "'$COHORT' attach </dev/null"          "no terminal to ask on"
 
 group "foreign sessions are left alone"
 tmux new-session -d -s cohort-imposter "sleep 120" 2>/dev/null

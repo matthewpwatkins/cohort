@@ -26,10 +26,10 @@ usage() {
   cat <<'USAGE'
 usage: cohort <command> [args]
 
-  new [--command CMD] [--no-worktree] <name> [claude args...]
+  new [--command CMD] [-W|--no-worktree] <name> [claude args...]
                                spawn a detached session named cohort-<name>
   ls [--names]                 list sessions this tool created
-  attach <name>                switch to a session (attach when outside tmux)
+  attach [name|number]         switch to a session; with no argument, pick one
   kill <name>                  kill one session
   kill --all [--yes]           kill every session this tool created
   config                       show resolved settings and where each came from
@@ -47,7 +47,7 @@ USAGE
 help_topic() {
   case ${1:-} in
     new) cat <<'H'
-cohort new [--command CMD] [--no-worktree] <name> [claude args...]
+cohort new [--command CMD] [-W|--no-worktree] <name> [claude args...]
 
 Starts a detached tmux session named cohort-<name> running Claude Code, tagged
 so the other subcommands recognise it. The prefix keeps the session clear of
@@ -66,12 +66,12 @@ The launcher, model and permission mode each resolve highest-first:
   permission mode   --permission-mode or --dangerously-skip-permissions that
                     you pass  >  $COHORT_MODE  >  settings.permissionMode
                     >  left unset
-  worktree          --worktree/-w or --no-worktree that you pass
+  worktree          --worktree/-w or --no-worktree/-W that you pass
                     >  $COHORT_WORKTREE  >  settings.worktree  >  on
 
 With worktrees on, the session gets `--worktree <name>`, so claude puts it on
 its own branch in <repo>/.claude/worktrees/<name> and `cohort ls` reports that
-directory. --no-worktree keeps the worker in the current checkout; passing
+directory. --no-worktree (-W) keeps the worker in the current checkout; passing
 --worktree yourself (with or without a name) is honoured verbatim.
 
 Run `cohort help config` for the settings file, and `cohort config` to see what
@@ -93,11 +93,17 @@ not the directory the session was spawned from.
 H
 ;;
     attach) cat <<'H'
-cohort attach <name>          (short form: cohort a <name>)
+cohort attach [name|number]   (short form: cohort a)
 
 Equivalent to `tmux attach -t cohort-<name>`, except that inside tmux it
 switches the current client instead of nesting. Refuses sessions cohort did not
 create — use tmux directly for those.
+
+Takes the number from the # column of `cohort ls` as well as the name. A name
+is always tried first, so a session actually called "2" is still reachable.
+
+With no argument it lists the sessions and asks which one, or goes straight
+there when only one is running.
 H
 ;;
     kill) cat <<'H'
@@ -270,7 +276,8 @@ session_exists() { tmux has-session -t "=$1" 2>/dev/null; }
 # derived from session_path.
 tagged() {
   tmux list-sessions -F "#{$TAG}"$'\t'"#{session_name}"$'\t'"#{session_path}"$'\t'"#{session_created}"$'\t'"#{session_attached}"$'\t'"#{$WT_TAG}" 2>/dev/null \
-    | awk -F'\t' '$1 == 1 { sub(/^[^\t]*\t/, ""); print }'
+    | awk -F'\t' '$1 == 1 { sub(/^[^\t]*\t/, ""); print }' \
+    | sort
 }
 
 human_age() {
@@ -292,7 +299,7 @@ cmd_new() {
     case $1 in
       --command) [[ $# -ge 2 ]] || die "--command needs a value"; cmd_override=$2; shift 2 ;;
       --command=*) cmd_override=${1#*=}; shift ;;
-      --no-worktree) wt_set=1; shift ;;
+      -W|--no-worktree) wt_set=1; shift ;;
       --) shift; break ;;
       *) break ;;
     esac
@@ -330,7 +337,7 @@ cmd_new() {
       --permission-mode|--permission-mode=*|--dangerously-skip-permissions) mode_set=1; passthru+=("$a") ;;
       -w|--worktree|--worktree=*) wt_set=1; passthru+=("$a") ;;
       # cohort's own switch, and the only arg after <name> claude never sees.
-      --no-worktree) wt_set=1 ;;
+      -W|--no-worktree) wt_set=1 ;;
       *) passthru+=("$a") ;;
     esac
   done
@@ -444,7 +451,7 @@ cmd_ls() {
   # Build every row first so the columns can be sized to what is actually in
   # them: session names come from ticket ids as often as from short words.
   local -a out=()
-  local nw=4 bw=6 line
+  local nw=4 bw=6 line i=0
   # Rows carry the real tmux names; the prefix is noise in a listing where
   # every row has it, and the short name is what the other subcommands take.
   while IFS=$'\t' read -r name path created attached wt; do
@@ -456,25 +463,69 @@ cmd_ls() {
     age=$(human_age $(( now - created )))
     if [[ ${#name} -gt $nw ]]; then nw=${#name}; fi
     if [[ ${#branch} -gt $bw ]]; then bw=${#branch}; fi
-    out+=("$name"$'\t'"$branch"$'\t'"$age"$'\t'"$([[ $attached == 0 ]] && echo no || echo yes)"$'\t'"$path")
+    i=$(( i + 1 ))
+    out+=("$i"$'\t'"$name"$'\t'"$branch"$'\t'"$age"$'\t'"$([[ $attached == 0 ]] && echo no || echo yes)"$'\t'"$path")
   done <<<"$rows"
 
-  fmt="%-${nw}s  %-${bw}s  %-6s  %-8s  %s\n"
+  # The number is what `attach` takes as a shorthand, so it is a real column
+  # rather than decoration.
+  fmt="%-3s %-${nw}s  %-${bw}s  %-6s  %-8s  %s\n"
   # shellcheck disable=SC2059
-  printf "$fmt" NAME BRANCH AGE ATTACHED DIR
+  printf "$fmt" '#' NAME BRANCH AGE ATTACHED DIR
+  local n
   for line in "${out[@]}"; do
-    IFS=$'\t' read -r name branch age attached path <<<"$line"
+    IFS=$'\t' read -r n name branch age attached path <<<"$line"
     # shellcheck disable=SC2059
-    printf "$fmt" "$name" "$branch" "$age" "$attached" "$path"
+    printf "$fmt" "$n" "$name" "$branch" "$age" "$attached" "$path"
   done
 }
 
+# Set PICKED to the full session name a reference denotes. A reference is a
+# name or the number `ls` printed beside it; the name is tried first, so a
+# session someone actually called "2" stays reachable by name.
+PICKED=''
+resolve_session() {
+  local ref=$1 full name n=0
+  full=$(full_name "$ref")
+  if session_exists "$full"; then PICKED=$full; return 0; fi
+  case $ref in ''|*[!0-9]*) return 1 ;; esac
+  while IFS=$'\t' read -r name _; do
+    n=$(( n + 1 ))
+    if [[ $n -eq $ref ]]; then PICKED=$name; return 0; fi
+  done < <(tagged)
+  return 1
+}
+
+# Choose a session when none was named: straight there if only one is running,
+# otherwise show the list and ask.
+pick_session() {
+  local rows count reply
+  rows=$(tagged) || true
+  [[ -n $rows ]] || { echo "no cohort sessions"; return 1; }
+  count=$(printf '%s\n' "$rows" | wc -l)
+  if [[ $count -eq 1 ]]; then
+    PICKED=$(printf '%s' "$rows" | cut -f1)
+    return 0
+  fi
+  [[ -t 0 ]] || die "attach needs a session name when there is no terminal to ask on"
+  cmd_ls
+  printf '\nattach which? [number or name] '
+  read -r reply || return 1
+  [[ -n $reply ]] || { echo "cancelled"; return 1; }
+  resolve_session "$reply" || die "no session '$reply'"
+}
+
 cmd_attach() {
-  [[ $# -eq 1 ]] || usage 2
+  [[ $# -le 1 ]] || usage 2
   need_tmux
   local session
-  session=$(full_name "$1")
-  session_exists "$session" || die "no session '$(short_name "$1")'"
+  if [[ $# -eq 0 ]]; then
+    pick_session || return 1
+    session=$PICKED
+  else
+    resolve_session "$1" || die "no session '$1'"
+    session=$PICKED
+  fi
   is_ours "$session" || die "'$session' is not a cohort session — use 'tmux attach -t $session'"
   if [[ -n ${TMUX:-} ]]; then
     tmux switch-client -t "=$session"
@@ -630,16 +681,21 @@ H
   esac
 }
 
-[[ $# -ge 1 ]] || usage 2
-cmd=$1; shift
-case $cmd in
-  new|n)     cmd_new "$@" ;;
-  ls|list|l) cmd_ls "$@" ;;
-  attach|a)  cmd_attach "$@" ;;
-  kill|k)    cmd_kill "$@" ;;
-  config)    cmd_config "$@" ;;
-  completion) cmd_completion "$@" ;;
-  help)      help_topic "${1:-}" ;;
-  -h|--help) usage 0 ;;
-  *) warn "cohort: unknown command '$cmd'"; usage 2 ;;
-esac
+# Only dispatch when run as a program. Sourcing the file gives you its
+# functions without running anything, which is how the tests reach the parts
+# that would otherwise need a terminal to observe.
+if [[ ${BASH_SOURCE[0]:-$0} == "$0" ]]; then
+  [[ $# -ge 1 ]] || usage 2
+  cmd=$1; shift
+  case $cmd in
+    new|n)     cmd_new "$@" ;;
+    ls|list|l) cmd_ls "$@" ;;
+    attach|a)  cmd_attach "$@" ;;
+    kill|k)    cmd_kill "$@" ;;
+    config)    cmd_config "$@" ;;
+    completion) cmd_completion "$@" ;;
+    help)      help_topic "${1:-}" ;;
+    -h|--help) usage 0 ;;
+    *) warn "cohort: unknown command '$cmd'"; usage 2 ;;
+  esac
+fi

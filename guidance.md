@@ -18,10 +18,11 @@ at the same time, or when a long job should keep going while other work does.
 - **Isolation.** By default `cohort new` creates the session's worktree itself,
   so never hand-roll one or `cd` into it first; it lands on its own branch under
   `<repo>/.claude/worktrees/<name>`, and `cohort ls` reports where each session
-  really is. Pass `--no-worktree` for a small, self-contained change, or
-  `--worktree` to opt in when the default is off. A worktree branches from the
-  tracked remote branch, so push anything the session must build on before
-  spawning it; cohort warns when local HEAD is ahead.
+  really is. Pass `--no-worktree` (`-W`) to keep a session on the current
+  checkout, which is usually right for a lead: it reads, delegates and sequences
+  merges, and needs to see the branches its workers produce. A worktree branches
+  from the tracked remote branch, so push anything the session must build on
+  before spawning it; cohort warns when local HEAD is ahead.
 - **Settings.** Launcher, model, permission mode and whether new sessions get a
   worktree all come from `~/.cohort/settings.json`; `cohort config` shows what is
   in effect, and a flag deviates from it for one session. A spawned session needs
