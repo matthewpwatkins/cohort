@@ -274,10 +274,15 @@ session_exists() { tmux has-session -t "=$1" 2>/dev/null; }
 # The worktree field is the directory claude was asked to create for the
 # session, which is not where the session was spawned from and so cannot be
 # derived from session_path.
+#
+# Oldest first, so the numbers `ls` prints and the numbers `attach` accepts
+# cannot disagree, and so a session's number does not move under it when a
+# newer one appears: a lead started before its workers stays 1. The name
+# breaks ties, since workers spawned in a burst share a second.
 tagged() {
   tmux list-sessions -F "#{$TAG}"$'\t'"#{session_name}"$'\t'"#{session_path}"$'\t'"#{session_created}"$'\t'"#{session_attached}"$'\t'"#{$WT_TAG}" 2>/dev/null \
     | awk -F'\t' '$1 == 1 { sub(/^[^\t]*\t/, ""); print }' \
-    | sort
+    | sort -t"$(printf '\t')" -k3,3n -k1,1
 }
 
 human_age() {

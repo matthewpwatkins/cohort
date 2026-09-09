@@ -192,6 +192,18 @@ says "kill reports a missing session"    "'$COHORT' kill wt-off"      "no sessio
 "$COHORT" kill --all --yes >/dev/null 2>&1
 says "ls is empty afterwards"            "'$COHORT' ls"               "no cohort sessions"
 
+group "sessions are numbered oldest first"
+# Named so that age and alphabetical order disagree: sorting by name would put
+# "aaa-newest" first, and the point is that it does not.
+spawn zzz-oldest --no-worktree
+sleep 1
+spawn aaa-newest --no-worktree
+says "the oldest session is number 1"    "'$COHORT' ls --names | sed -n 1p" "zzz-oldest"
+says "and a lead keeps its number when a worker joins" \
+  "spawn mmm-later --no-worktree; '$COHORT' ls --names | sed -n 1p" "zzz-oldest"
+says "index 1 still resolves to it"      "resolve_via 1"              "cohort-zzz-oldest"
+"$COHORT" kill --all --yes >/dev/null 2>&1
+
 group "installer"
 H=$TMP/home; mkdir -p "$H"
 inst() { env HOME="$H" XDG_CONFIG_HOME="$H/.config" CLAUDE_CONFIG_DIR="$H/.claude" \

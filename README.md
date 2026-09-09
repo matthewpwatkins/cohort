@@ -99,14 +99,15 @@ and coordinate their work. You can see these sessions and interact with them ind
 ```bash
 $ cohort ls
 #   NAME                    BRANCH                           AGE  ATTACHED  DIR
-1   JIRA-1234-add-crud-ops  worktree-JIRA-1234-add-crud-ops  4m   no        /home/you/project/.claude/worktrees/JIRA-1234-add-crud-ops
+1   lead                    main                             20m  yes       /home/you/project
 2   JIRA-1235-unit-tests    worktree-JIRA-1235-unit-tests    16m  no        /home/you/project/.claude/worktrees/JIRA-1235-unit-tests
-3   lead                    main                             20m  yes       /home/you/project
+3   JIRA-1234-add-crud-ops  worktree-JIRA-1234-add-crud-ops  4m   no        /home/you/project/.claude/worktrees/JIRA-1234-add-crud-ops
 ```
 
-The lead session is on your checkout and the workers are each on their own
-branch in their own worktree — see [Worktrees](#worktrees) for how to change
-that.
+Sessions are listed oldest first, so the lead you started before its workers
+is always number 1 and stays there as workers come and go. The lead is on your
+checkout and the workers are each on their own branch in their own worktree —
+see [Worktrees](#worktrees) for how to change that.
 
 ### Interacting with sessions through the lead
 
@@ -140,7 +141,7 @@ Use the `cohort attach` (or `cohort a`) command with the session name
 
 ```bash
 $ cohort attach JIRA-1234-add-crud-ops
-$ cohort a 1                    # same session, less typing
+$ cohort a 3                    # same session, less typing
 ```
 
 With no argument at all it lists the sessions and asks which one, so you do not
@@ -149,11 +150,11 @@ have to run `cohort ls` first to remember what is running:
 ```bash
 $ cohort a
 #   NAME                    BRANCH                           AGE  ATTACHED  DIR
-1   JIRA-1234-add-crud-ops  worktree-JIRA-1234-add-crud-ops  4m   no        /home/you/project/.claude/worktrees/JIRA-1234-add-crud-ops
+1   lead                    main                             20m  yes       /home/you/project
 2   JIRA-1235-unit-tests    worktree-JIRA-1235-unit-tests    16m  no        /home/you/project/.claude/worktrees/JIRA-1235-unit-tests
-3   lead                    main                             20m  yes       /home/you/project
+3   JIRA-1234-add-crud-ops  worktree-JIRA-1234-add-crud-ops  4m   no        /home/you/project/.claude/worktrees/JIRA-1234-add-crud-ops
 
-attach which? [number or name] 2
+attach which? [number or name] 3
 ```
 
 When only one session is running it goes straight there without asking.
@@ -305,25 +306,6 @@ spawned them. Any session can spawn more, they communicate using Claude's new
 and each one is an ordinary tmux session you can attach to, detach from, and
 leave running for as long as you like.
 
-## Contributing
-
-`./test-cohort.sh` runs the suite. It spawns sessions against a stub launcher
-instead of claude, so it needs no credentials and no network, and it works in a
-temporary HOME so your own config, sessions and shell files are never touched.
-Add `-v` to see each assertion.
-
-```bash
-./test-cohort.sh
-```
-
-CI runs it on Linux and macOS, under stock `/bin/bash` on the mac so the 3.2
-support is real rather than assumed, along with shellcheck and a full
-install/uninstall round trip on both.
-
-A few behaviours only real claude can show, and the suite does not cover them:
-worktree creation refuses in a directory whose workspace trust you have not
-accepted yet, and a new worktree branches from the tracked remote branch.
-
 ## Updating and uninstalling
 
 Updating is the install command again. It overwrites the `cohort` command and
@@ -349,3 +331,22 @@ want it gone.
 
 Running sessions are unaffected by either — they are tmux sessions, and they
 keep running. Use `cohort kill --all` first if you want a clean slate.
+
+## Contributing
+
+`./test-cohort.sh` runs the suite. It spawns sessions against a stub launcher
+instead of claude, so it needs no credentials and no network, and it works in a
+temporary HOME so your own config, sessions and shell files are never touched.
+Add `-v` to see each assertion.
+
+```bash
+./test-cohort.sh
+```
+
+CI runs it on Linux and macOS, under stock `/bin/bash` on the mac so the 3.2
+support is real rather than assumed, along with shellcheck and a full
+install/uninstall round trip on both.
+
+A few behaviours only real claude can show, and the suite does not cover them:
+worktree creation refuses in a directory whose workspace trust you have not
+accepted yet, and a new worktree branches from the tracked remote branch.
