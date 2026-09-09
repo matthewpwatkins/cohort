@@ -16,7 +16,8 @@ to interact with cohort sessions, spin up new workers, and facilitate messaging
 between your cohort agents.
 
 There is nothing to set up afterwards. The installer puts the command in `~/bin`,
-wires session-name completion into your `.bashrc` and `.zshrc`, and installs
+wires session-name completion into every shell you have (bash, zsh and fish are
+supported; fish gets an autoloaded completion file rather than an rc edit), and installs
 [tmux](https://github.com/tmux/tmux/wiki/Getting-Started) if you do not already
 have it (via brew, apt, dnf, yum, zypper, pacman or apk — it will ask for your
 password if the package manager needs root). Completion applies to shells you

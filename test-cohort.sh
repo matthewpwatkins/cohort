@@ -93,7 +93,7 @@ says "ls rejects unknown options"        "'$COHORT' ls --nope"        "unknown o
 says "kill needs a target"               "'$COHORT' kill"             "needs a session name"
 says "kill --all takes no names"         "'$COHORT' kill --all foo"   "takes no session names"
 says "attach needs an existing session"  "'$COHORT' attach ghost"     "no session 'ghost'"
-says "completion rejects other shells"   "'$COHORT' completion fish"  "try bash or zsh"
+says "completion rejects other shells"   "'$COHORT' completion nope"  "try bash, zsh or fish"
 
 group "settings"
 settings '{"model":"m","permissionMode":"p","worktree":false,"args":["--x"]}'
@@ -113,7 +113,9 @@ says "env overrides the file"            "COHORT_MODEL=envm '$COHORT' config" '$
 group "completion"
 says "bash completion is a function"     "'$COHORT' completion bash"  "complete -F _cohort cohort"
 says "zsh completion registers compdef"  "'$COHORT' completion zsh"   "compdef _cohort cohort"
+says "fish completion uses complete -c"  "'$COHORT' completion fish"  "complete -c cohort"
 says "completion offers session names"   "'$COHORT' completion bash"  "cohort ls --names"
+says "fish completion offers them too"   "'$COHORT' completion fish"  "__cohort_names"
 
 group "spawning"
 spawn wt-default
@@ -196,6 +198,30 @@ says "keeps the user's CLAUDE.md"        "cat '$H/.claude/CLAUDE.md'" "# my rule
 lacks "and removes its own block"        "cat '$H/.claude/CLAUDE.md'" "BEGIN cohort"
 [[ -e $H/bin/cohort ]] && bad "binary is gone" || ok "binary is gone"
 
+group "which shell the installer wires"
+# $2 is the login shell; any further arguments are dotfiles that already exist.
+wire_case() {
+  local label=$1 login=$2; shift 2
+  local h=$TMP/wire-$label f
+  rm -rf "$h"; mkdir -p "$h"
+  for f in "$@"; do mkdir -p "$h/$(dirname "$f")"; printf '# existing\n' >"$h/$f"; done
+  env HOME="$h" SHELL="$login" CLAUDE_CONFIG_DIR="$h/.claude" COHORT_CONFIG_DIR="$h/.cohort" \
+      COHORT_BINDIR="$h/bin" "$INSTALLER" --no-tmux 2>&1 | grep completion
+}
+says "a fish user gets an autoloaded file" \
+  "wire_case fish /usr/bin/fish .config/fish/config.fish" ".config/fish/completions/cohort.fish"
+lacks "and no rc file it will never read" \
+  "wire_case fish2 /usr/bin/fish .config/fish/config.fish" ".bashrc"
+says "a fish login shell counts with no dotfiles" \
+  "wire_case fish3 /usr/bin/fish" "cohort.fish"
+says "a zsh user gets .zshrc" "wire_case zsh /bin/zsh .zshrc" ".zshrc"
+says "both shells present means both wired" \
+  "wire_case mixed /bin/bash .bashrc .config/fish/config.fish" ".bashrc"
+says "an exotic login shell is refused, not guessed at" \
+  "wire_case exotic /usr/bin/nu" "is not supported"
+lacks "and nothing is written for it" "wire_case exotic2 /usr/bin/nu" "added"
+
+group "installer leaves other people's files alone"
 printf '#!/usr/bin/env bash\necho mine\n' >"$H/bin/cohort" 2>/dev/null || mkdir -p "$H/bin"
 printf '#!/usr/bin/env bash\necho mine\n' >"$H/bin/cohort"; chmod +x "$H/bin/cohort"
 says "never deletes a cohort it did not write" "inst --uninstall"     "is not ours"

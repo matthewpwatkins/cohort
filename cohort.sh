@@ -33,7 +33,7 @@ usage: cohort <command> [args]
   kill <name>                  kill one session
   kill --all [--yes]           kill every session this tool created
   config                       show resolved settings and where each came from
-  completion [bash|zsh]        print a shell completion script
+  completion [bash|zsh|fish]   print a shell completion script
   help [command]               longer help for a command
 
 Short forms: n, l, a, k for new, ls, attach, kill.
@@ -581,7 +581,7 @@ _cohort() {
   case ${COMP_WORDS[1]} in
     attach|a|kill|k) COMPREPLY=($(compgen -W "$(cohort ls --names 2>/dev/null)" -- "$cur")) ;;
     help)            COMPREPLY=($(compgen -W "$cmds" -- "$cur")) ;;
-    completion)      COMPREPLY=($(compgen -W "bash zsh" -- "$cur")) ;;
+    completion)      COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur")) ;;
   esac
 }
 complete -F _cohort cohort
@@ -601,13 +601,27 @@ _cohort() {
   case ${words[2]} in
     attach|a|kill|k) compadd -- ${(f)"$(cohort ls --names 2>/dev/null)"} ;;
     help)            compadd -- $cmds ;;
-    completion)      compadd -- bash zsh ;;
+    completion)      compadd -- bash zsh fish ;;
   esac
 }
 compdef _cohort cohort
 H
 ;;
-    *) die "no completion for '$1' — try bash or zsh" ;;
+    fish) cat <<'H'
+function __cohort_names
+  cohort ls --names 2>/dev/null
+end
+complete -c cohort -f
+complete -c cohort -n __fish_use_subcommand -a 'new ls attach kill config completion help'
+complete -c cohort -n '__fish_seen_subcommand_from attach a kill k' -a '(__cohort_names)'
+complete -c cohort -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'
+complete -c cohort -n '__fish_seen_subcommand_from help' -a 'new ls attach kill config'
+complete -c cohort -n '__fish_seen_subcommand_from new' -l no-worktree -d 'keep the session in the current checkout'
+complete -c cohort -n '__fish_seen_subcommand_from kill' -l all -d 'every cohort session'
+complete -c cohort -n '__fish_seen_subcommand_from ls' -l names -d 'bare names, one per line'
+H
+;;
+    *) die "no completion for '$1' — try bash, zsh or fish" ;;
   esac
 }
 

@@ -42,6 +42,40 @@ jobs:
       - name: Run the suite
         run: ${{ matrix.shell }} ./test-cohort.sh -v
 
+  # fish is not installed on the runners, and its completion syntax is nothing
+  # like bash's, so check the generated script actually loads and completes.
+  fish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y fish tmux
+      # The completion shells out to `cohort`, so it has to be on PATH for the
+      # session-name check to mean anything.
+      - name: Put cohort on PATH
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          cp cohort.sh "$HOME/.local/bin/cohort"
+          chmod +x "$HOME/.local/bin/cohort"
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+      - name: The generated script loads
+        run: |
+          cohort completion fish >/tmp/cohort.fish
+          fish -c 'source /tmp/cohort.fish'
+      - name: And it completes subcommands
+        run: |
+          out=$(fish -c 'source /tmp/cohort.fish; complete -C "cohort "')
+          echo "$out"
+          echo "$out" | grep -q attach
+      - name: And it completes live session names
+        run: |
+          printf '#!/bin/sh\nsleep 120\n' >/tmp/stub && chmod +x /tmp/stub
+          cohort new --command /tmp/stub fishy --no-worktree
+          cohort ls --names
+          out=$(fish -c 'source /tmp/cohort.fish; complete -C "cohort attach "')
+          echo "$out"
+          echo "$out" | grep -q fishy
+          cohort kill --all --yes
+
   install:
     strategy:
       fail-fast: false
