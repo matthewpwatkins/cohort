@@ -15,107 +15,36 @@ This installs cohort and gives your claude code installation the "smarts"
 to interact with cohort sessions, spin up new workers, and facilitate messaging
 between your cohort agents.
 
-There is nothing to set up afterwards, and the installer tells you so in as many
-words. It puts the command in whichever of `~/.local/bin` or `~/bin` your PATH
-already searches, so `cohort` works the moment it finishes; if neither is on
-PATH it extends PATH for you and says which file to source. It wires session-name
-completion into every shell you have — bash, zsh and fish, with fish getting an
-autoloaded completion file rather than an rc edit. Completion applies to shells
-you open from then on.
-
-[tmux](https://github.com/tmux/tmux/wiki/Getting-Started) is checked first,
-before anything is written. Every cohort session is a tmux session, so if it is
-missing the installer offers to install it (via brew, apt, dnf, yum, zypper,
-pacman or apk) and waits for you to say yes — that is the one step reaching
-outside your own files. Say no and nothing is installed at all, rather than
-leaving you a command that cannot run:
-
-```
-tmux
-  missing   cohort runs every session in tmux
-  Install it with: sudo apt-get install -y tmux ? [Y/n] n
-  declined  left tmux alone
-
-Stopped
-  nothing was installed — cohort runs every session in tmux
-  install tmux and run this again, or pass --no-tmux to install without it
-```
-
-A normal run looks like this:
-
-```
-Command
-  installed /home/you/.local/bin/cohort
-
-Guidance for Claude
-  created   /home/you/.claude/CLAUDE.md
-  loaded into every Claude Code session
-
-Shell completion
-  added     /home/you/.bashrc
-
-tmux
-  present   /usr/bin/tmux
-
-Ready
-  yes       cohort is on your PATH in this shell
-  tab-completion starts in new shells, or run: source /home/you/.bashrc
-```
-
-If Claude Code itself is missing, the installer offers to run
-`curl -fsSL https://claude.ai/install.sh | bash` for you. Unlike tmux this one is
-not a gate — cohort installs either way, and the closing summary reminds you
-that no session will start until claude is there.
-
-Pass `--bindir DIR` to install somewhere specific, `--no-tmux` or `--no-claude`
-to skip either check, or `--yes` to install both without being asked. cohort
-needs tmux 3.0 or newer and bash 3.2 or newer, which is what macOS ships.
-
 ## Usage
 
-### Creating sessions
+### Creating a lead agent
+
+Start by spinnig up a lead agent without creating a worktree:
 
 ```bash
-cohort new lead -W          # Creates a new tmux session called cohort-lead
-                            # and spawns a Claude Code session named lead
-                            # inside that tmux session
+cohort new lead -W
 ```
 
-`-W` is short for `--no-worktree`. Sessions get their own git worktree by
-default, which is what you want for a worker that is going to write code, and
-usually not what you want for the lead: a lead reads the repo, delegates, and
-sequences merges, so it belongs on your actual checkout where it can see the
-branches its workers are producing. Leave `-W` off for the workers.
+> `-W` is short for `--no-worktree`. Sessions get their own git worktree by
+default, which is what you want for a worker that is going to write code, but
+usually not what you want for the lead.
 
-Then, while inside the lead Claude session, tell Claude:
+### Interacting with sessions through the lead
 
-```
+Then, while inside the lead Claude session, tell Claude something like:
+
+```txt
 Create a worker session for each of the three tickets assigned to me on our Jira board: <url>
 ```
 
 The lead agent will then spin up those three new cohort claude sessions as worktrees
-and coordinate their work. You can see these sessions and interact with them individually:
-
-```bash
-$ cohort ls
-#   NAME                    BRANCH                           AGE  ATTACHED  DIR
-1   lead                    main                             20m  yes       /home/you/project
-2   JIRA-1235-unit-tests    worktree-JIRA-1235-unit-tests    16m  no        /home/you/project/.claude/worktrees/JIRA-1235-unit-tests
-3   JIRA-1234-add-crud-ops  worktree-JIRA-1234-add-crud-ops  4m   no        /home/you/project/.claude/worktrees/JIRA-1234-add-crud-ops
-```
-
-Sessions are listed oldest first, so the lead you started before its workers
-is always number 1 and stays there as workers come and go. The lead is on your
-checkout and the workers are each on their own branch in their own worktree —
-see [Worktrees](#worktrees) for how to change that.
-
-### Interacting with sessions through the lead
+and coordinate their work.
 
 When you're attached to the lead, you can give it more work to farm out to its team,
-tell it to spawn new workers, or ask for overall status updates. You are basically
-the technical PM now:
+tell it to spawn new workers, or ask for overall status updates, just as if you were
+talking to a human engineering lead. For example:
 
-```
+```txt
 I just heard that we want to combine the create and update into a single upsert operation. Let the CRUD worker know.
 
 Also, tell the unit test worker to make sure to upgrade us to the latest version of the mocking lib while it's working.
@@ -127,13 +56,32 @@ And is the unit test worker almost done? I'm wondering if we should add integrat
 
 Just as you can direct the whole team from the lead session, the lead session will also surface questions from its workers to you:
 
-```
-There is a pre-existing test failure both workers found. Ignore the test or fix it?
+```txt
+Question for you: There is a pre-existing test failure both workers found. Ignore the test or fix it?
 ```
 
 ### Interacting with sessions yourself
 
-But you may find it helpful to join the worker sessions yourself to give guidance, rotating through each of them
+You can see all sessions using `cohort ls`:
+
+```bash
+$ cohort ls
+#   NAME                    BRANCH                           AGE  ATTACHED  DIR
+1   lead                    main                             20m  yes       /home/you/project
+2   JIRA-1235-unit-tests    worktree-JIRA-1235-unit-tests    16m  no        /home/you/project/.claude/worktrees/JIRA-1235-unit-tests
+3   JIRA-1234-add-crud-ops  worktree-JIRA-1234-add-crud-ops  4m   no        /home/you/project/.claude/worktrees/JIRA-1234-add-crud-ops
+```
+
+All sessions are [tmux](https://github.com/tmux/tmux/wiki/Getting-Started) sessions under the hood so all your familiar tmux commands work as well:
+
+| Command | Does |
+| ------- | ---- |
+| `tmux a -t cohort-<name>` | Attaches to a cohort session named `name` |
+| Ctrl + B, D | Detaches from the currently attached cohort session |
+| Ctrl + B, S | Lists the running sessions and lets you switch between them |
+| ... | ... |
+
+You may find it helpful to join the worker sessions yourself to give guidance, rotating through each of them
 like an architect stopping by each team member's desk to check in and answer questions.
 
 Use the `cohort attach` (or `cohort a`) command with the session name
@@ -144,8 +92,8 @@ $ cohort attach JIRA-1234-add-crud-ops
 $ cohort a 3                    # same session, less typing
 ```
 
-With no argument at all it lists the sessions and asks which one, so you do not
-have to run `cohort ls` first to remember what is running:
+Or you can use vanilla `tmux attach` / `tmux a`. Or if you're already inside a session,
+you can use the tmux session switcher command (`Ctrl + B, S`):
 
 ```bash
 $ cohort a
@@ -158,15 +106,6 @@ attach which? [number or name] 3
 ```
 
 When only one session is running it goes straight there without asking.
-
-All sessions are [tmux](https://github.com/tmux/tmux/wiki/Getting-Started) sessions under the hood so all your familiar tmux commands work as well:
-
-| Command | Does |
-| ------- | ---- |
-| `tmux a -t cohort-<name>` | Attaches to a cohort session named `name` |
-| Ctrl + B, D | Detaches from the currently attached cohort session |
-| Ctrl + B, S | Lists the running sessions and lets you switch between them |
-| ... | ... |
 
 ### Human as the lead
 
@@ -331,6 +270,64 @@ want it gone.
 
 Running sessions are unaffected by either — they are tmux sessions, and they
 keep running. Use `cohort kill --all` first if you want a clean slate.
+
+## Adcanced installation
+
+There is nothing to set up afterwards, and the installer tells you so in as many
+words. It puts the command in whichever of `~/.local/bin` or `~/bin` your PATH
+already searches, so `cohort` works the moment it finishes; if neither is on
+PATH it extends PATH for you and says which file to source. It wires session-name
+completion into every shell you have — bash, zsh and fish, with fish getting an
+autoloaded completion file rather than an rc edit. Completion applies to shells
+you open from then on.
+
+[tmux](https://github.com/tmux/tmux/wiki/Getting-Started) is checked first,
+before anything is written. Every cohort session is a tmux session, so if it is
+missing the installer offers to install it (via brew, apt, dnf, yum, zypper,
+pacman or apk) and waits for you to say yes — that is the one step reaching
+outside your own files. Say no and nothing is installed at all, rather than
+leaving you a command that cannot run:
+
+```
+tmux
+  missing   cohort runs every session in tmux
+  Install it with: sudo apt-get install -y tmux ? [Y/n] n
+  declined  left tmux alone
+
+Stopped
+  nothing was installed — cohort runs every session in tmux
+  install tmux and run this again, or pass --no-tmux to install without it
+```
+
+A normal run looks like this:
+
+```
+Command
+  installed /home/you/.local/bin/cohort
+
+Guidance for Claude
+  created   /home/you/.claude/CLAUDE.md
+  loaded into every Claude Code session
+
+Shell completion
+  added     /home/you/.bashrc
+
+tmux
+  present   /usr/bin/tmux
+
+Ready
+  yes       cohort is on your PATH in this shell
+  tab-completion starts in new shells, or run: source /home/you/.bashrc
+```
+
+If Claude Code itself is missing, the installer offers to run
+`curl -fsSL https://claude.ai/install.sh | bash` for you. Unlike tmux this one is
+not a gate — cohort installs either way, and the closing summary reminds you
+that no session will start until claude is there.
+
+Pass `--bindir DIR` to install somewhere specific, `--no-tmux` or `--no-claude`
+to skip either check, or `--yes` to install both without being asked. cohort
+needs tmux 3.0 or newer and bash 3.2 or newer, which is what macOS ships.
 
 ## Contributing
 
