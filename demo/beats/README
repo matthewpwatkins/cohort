@@ -1,0 +1,20 @@
+Beat files for the lead recording, one per cohort session, named after the
+session. demo/stub-claude plays the file matching its own -n name, so a session
+with no file here just idles at a prompt.
+
+Fields are tab separated: <kind><TAB><text><TAB><extra>
+
+  say      The person at the keyboard types <text> and sends it.
+  reply    Claude answers with <text>. <extra> overrides the pause after it.
+  tool     Claude runs something. <text> is what the tool call shows; <extra>,
+           when given, is what actually runs instead. The output under it is
+           the real command's real output.
+  pause    Sleep <text> seconds.
+  attach   Block until somebody is looking at this session. Everything after it
+           plays to an audience, and since there is only ever one client, this
+           is what keeps two sessions' scripts from talking over each other.
+  switch   Open the tmux session picker and choose <text>, the way the prefix
+           key would. <extra> overrides the pause before it.
+  detach   Hand the terminal back to the shell the recording started from.
+
+Lines starting with # are ignored.

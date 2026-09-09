@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# Stand-in for `claude`, used only when rendering the demo recordings.
+#
+# Everything cohort itself prints in a recording is real: real tmux sessions,
+# real git worktrees, a real `cohort ls` table. What this fakes is what a
+# session contains. That keeps whatever a real session prints at startup
+# (plugin banners, project memory, MCP output) out of the GIFs, and keeps a
+# recording from having to sit through minutes of real work.
+#
+# With no beats to play it mimics the two things cohort depends on claude for:
+# creating the worktree named by --worktree, and staying alive so the session
+# persists. Given a beats file it also plays a scripted conversation — see
+# demo/beats/README for the format.
+set -u
+
+name='' wt=''
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -n) name=$2; shift 2 ;;
+    --worktree) wt=$2; shift 2 ;;
+    --worktree=*) wt=${1#*=}; shift ;;
+    *) shift ;;
+  esac
+done
+
+# claude creates the worktree it was asked for; cohort reports where the
+# session lives by looking for it, so the stub has to make one too.
+dir=$PWD
+if [[ -n $wt ]] && root=$(git rev-parse --show-toplevel 2>/dev/null); then
+  dir=$root/.claude/worktrees/$wt
+  git -C "$root" worktree add -b "$wt" "$dir" >/dev/null 2>&1 || true
+  cd "$dir" 2>/dev/null || dir=$PWD
+fi
+
+# The window would otherwise be named after this script's `sleep`, where a real
+# session shows the launcher. Harmless if we are not running inside tmux.
+tmux rename-window claude 2>/dev/null || true
+
+DIM=$'\033[2m'; OFF=$'\033[0m'; BOLD=$'\033[1m'
+ORANGE=$'\033[38;5;208m'; GREEN=$'\033[38;5;114m'; GREY=$'\033[38;5;245m'
+CHAR_DELAY=${CHAR_DELAY:-0.035}
+
+printf '%s✻%s Welcome to %sClaude Code%s\n\n' "$ORANGE" "$OFF" "$BOLD" "$OFF"
+printf '  %scwd: %s%s\n' "$DIM" "$dir" "$OFF"
+[[ -n $name ]] && printf '  %ssession: %s%s\n' "$DIM" "$name" "$OFF"
+printf '\n'
+
+beats=''
+[[ -n ${DEMO_BEATS_DIR:-} && -n $name && -f ${DEMO_BEATS_DIR:-}/$name ]] \
+  && beats=$DEMO_BEATS_DIR/$name
+
+if [[ -z $beats ]]; then
+  printf '%s╭──────────────────────────────────────────────────╮%s\n' "$DIM" "$OFF"
+  printf '%s│%s > %sTry "how do I ..."                             %s│%s\n' "$DIM" "$OFF" "$DIM" "$DIM" "$OFF"
+  printf '%s╰──────────────────────────────────────────────────╯%s\n' "$DIM" "$OFF"
+  exec sleep infinity
+fi
+
+# Type a line the way a person would.
+typewrite() {
+  local line=$1 i
+  for (( i = 0; i < ${#line}; i++ )); do
+    printf '%s' "${line:i:1}"
+    sleep "$CHAR_DELAY"
+  done
+}
+
+# Wait until somebody is looking at this session. Beats after this point are
+# for an audience, so they must not play to an empty room — and it is what
+# keeps two sessions' scripts from talking over each other, since there is only
+# ever one client to go round.
+wait_attached() {
+  local n=0
+  while (( n < 300 )); do
+    [[ $(tmux display-message -p -t "$TMUX_SESSION" '#{session_attached}' 2>/dev/null) == 1 ]] && return 0
+    sleep 0.2
+    n=$(( n + 1 ))
+  done
+}
+
+# Drive the tmux session picker the way the prefix key would, then move through
+# it to a session and choose it.
+#
+# The order to move in is the picker's own, which is creation order — the same
+# order `cohort ls` numbers sessions in, and not the alphabetical order the list
+# happens to suggest. tmux hands out session ids in creation order and never
+# reuses one, so sorting on the id reproduces what the picker shows.
+#
+# The list is filtered to cohort's own sessions. The recording keeps a session
+# of its own alive to hold the tmux server open, and it has no business being on
+# screen in a picker the demo presents as the user's.
+PICKER_FILTER='#{m:cohort-*,#{session_name}}'
+pick_session() {
+  local target=cohort-${1#cohort-} pane=${TMUX_PANE:-} names=() i from=-1 to=-1
+  [[ -n $pane ]] || return 0
+  while read -r _ n; do
+    [[ $n == cohort-* ]] && names+=("$n")
+  done < <(tmux list-sessions -F '#{session_id} #{session_name}' \
+           | sed 's/^\$//' | sort -n)
+  for i in "${!names[@]}"; do
+    [[ ${names[i]} == "$TMUX_SESSION" ]] && from=$i
+    [[ ${names[i]} == "$target" ]] && to=$i
+  done
+  (( from >= 0 && to >= 0 )) || return 0
+
+  tmux choose-tree -Zs -f "$PICKER_FILTER" -t "$pane"
+  sleep 1.2
+  local step=Down count=$(( to - from ))
+  if (( count < 0 )); then step=Up; count=$(( -count )); fi
+  while (( count > 0 )); do
+    tmux send-keys -t "$pane" "$step"
+    sleep 0.45
+    count=$(( count - 1 ))
+  done
+  sleep 0.6
+  tmux send-keys -t "$pane" Enter
+  sleep 1
+
+  # If the pick missed, put the client where the script expects it. A recording
+  # that lands on the wrong session does not fail — every other session sits
+  # waiting for an audience, and the whole thing stalls in silence.
+  [[ $(tmux display-message -p '#{client_session}' 2>/dev/null) == "$target" ]] \
+    || tmux switch-client -t "=$target" 2>/dev/null || true
+}
+
+TMUX_SESSION=$(tmux display-message -p '#{session_name}' 2>/dev/null || echo '')
+
+while IFS=$'\t' read -r kind text extra; do
+  case ${kind:-} in
+    ''|'#'*) continue ;;
+
+    # The person at the keyboard types a message and sends it.
+    say)
+      printf '\n%s>%s ' "$GREY" "$OFF"
+      typewrite "$text"
+      printf '\n\n'
+      sleep 0.5
+      ;;
+
+    # Claude answers.
+    reply)
+      printf '%s●%s %s\n' "$GREEN" "$OFF" "$text"
+      sleep "${extra:-1.2}"
+      ;;
+
+    # Claude runs something, and what comes back is the real thing's output.
+    tool)
+      printf '%s●%s %sBash%s(%s)\n' "$GREEN" "$OFF" "$BOLD" "$OFF" "$text"
+      sleep 0.6
+      while IFS= read -r out; do
+        printf '  %s↳%s  %s\n' "$GREY" "$OFF" "$out"
+      done < <(eval "${extra:-$text}" 2>&1)
+      printf '\n'
+      sleep 0.8
+      ;;
+
+    pause) sleep "$text" ;;
+    attach) wait_attached ;;
+    switch) sleep "${extra:-1}"; pick_session "$text" ;;
+
+    # Hand the terminal back to the shell the recording started from.
+    detach) tmux detach-client -s "$TMUX_SESSION" 2>/dev/null || true ;;
+  esac
+done < "$beats"
+
+exec sleep infinity

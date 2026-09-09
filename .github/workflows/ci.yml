@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - run: shellcheck -S warning cohort.sh install-cohort.sh test-cohort.sh
+      - run: shellcheck -S warning cohort.sh install-cohort.sh test-cohort.sh demo/render.sh demo/basics.sh demo/lead.sh demo/lib.sh demo/stub-claude
 
   test:
     strategy:

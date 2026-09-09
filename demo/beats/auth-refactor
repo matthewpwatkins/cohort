@@ -1,0 +1,9 @@
+attach
+pause	1.5
+reply	I am partway through the session store swap.
+reply	Sessions issued before the cutover: expire them, or migrate them in place?
+pause	1.5
+say	Migrate them in place. Anything from the last 30 days has to keep working.
+reply	Understood. I will backfill them into the new store and keep the old cookie format readable.
+pause	2.5
+switch	lead	1.5

@@ -5,6 +5,10 @@
 A lightweight orchestrator for running parallel and persistent
 Claude Code sessions on Mac and Linux.
 
+## Demo
+
+![A lead session spawning three workers, relaying their questions, and reporting status](demo/lead.gif)
+
 ## Installation
 
 ```bash
@@ -61,6 +65,8 @@ Question for you: There is a pre-existing test failure both workers found. Ignor
 ```
 
 ### Interacting with sessions yourself
+
+![Starting two cohort sessions, listing them, attaching to one, and retiring one](demo/basics.gif)
 
 You can see all sessions using `cohort ls`:
 
@@ -347,3 +353,25 @@ install/uninstall round trip on both.
 A few behaviours only real claude can show, and the suite does not cover them:
 worktree creation refuses in a directory whose workspace trust you have not
 accepted yet, and a new worktree branches from the tracked remote branch.
+
+### The animations
+
+Both GIFs are generated, not screen-captured. `demo/render.sh` builds a
+throwaway repo, plays a script against a tmux server of its own, and renders the
+result with [asciinema](https://docs.asciinema.org/getting-started/) and
+[agg](https://docs.asciinema.org/manual/agg/installation/):
+
+```bash
+./demo/render.sh          # both
+./demo/render.sh basics   # demo/basics.gif
+./demo/render.sh lead     # demo/lead.gif
+```
+
+Cohort is real throughout: real tmux sessions, real git worktrees, a real
+`cohort ls`, and in the lead recording the sessions in the picker are the ones
+the lead's own `cohort new` calls created. What is faked is the typing and the
+contents of the sessions. `demo/stub-claude` stands in for claude, so the
+recordings carry none of what a real session prints on startup and none of the
+waiting a real one involves; the conversations it plays are scripts in
+`demo/beats/`, whose format is documented in `demo/beats/README`. Re-run the
+recordings after anything that changes what the commands print.

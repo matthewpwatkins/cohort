@@ -1,0 +1,35 @@
+attach
+pause	1.5
+say	Spin up a worker to move the auth service off the legacy session store.
+reply	Starting one on its own branch and worktree.
+tool	cohort new auth-refactor
+reply	auth-refactor has the task.
+pause	2
+say	Now one for the search index rebuild.
+reply	On it.
+tool	cohort new search-index
+reply	search-index is on the rebuild.
+pause	2
+say	Auth has to keep reading the old cookie format for 30 days. Tell it that, then start a worker on the flaky tests.
+reply	Sent the cookie constraint to auth-refactor.
+tool	cohort new flaky-tests
+reply	flaky-tests is looking at the integration suite.
+pause	2.5
+reply	search-index has a question: rebuild against the staging cluster, or a local index?
+pause	1.5
+say	Staging. It has the production shard layout.
+reply	Passed that back.
+pause	2
+reply	auth-refactor is asking what to do with sessions issued before the cutover.
+pause	1.5
+say	I will answer that one in its own session.
+reply	Go ahead, it is waiting on you.
+switch	auth-refactor	2
+attach
+pause	1.5
+say	Where is everyone?
+reply	auth-refactor: migrating old sessions in place, keeping the 30 day cookie window.
+reply	search-index: rebuilding against staging.
+reply	flaky-tests: bisecting the suite, three suspects so far.
+pause	3.5
+detach
