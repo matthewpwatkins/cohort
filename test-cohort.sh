@@ -231,8 +231,10 @@ group "tmux is a hard dependency"
 # check is the thing that fails rather than some coreutil.
 NOTMUX=$TMP/notmux-bin
 mkdir -p "$NOTMUX"
+# type -P, not command -v: the latter reports a shell function or alias by
+# name, which would link each tool to itself and break the fixture subtly.
 for t in bash sh dirname basename mktemp cp chmod cat grep awk sed id uname rm mkdir cmp tr cut curl; do
-  t_path=$(command -v "$t" 2>/dev/null) && ln -sf "$t_path" "$NOTMUX/$t"
+  t_path=$(type -P "$t" 2>/dev/null) && [[ $t_path == /* ]] && ln -sf "$t_path" "$NOTMUX/$t"
 done
 # Present so a package manager is found, but it never actually produces tmux.
 printf '#!/bin/sh\nexit 0\n' >"$NOTMUX/apt-get"; chmod +x "$NOTMUX/apt-get"
@@ -257,6 +259,35 @@ notmux_case >/dev/null 2>&1
 lacks "and the rc file is untouched" "cat '$TMP/notmux-home/.bashrc'" "BEGIN cohort"
 says "a tmux install that does not work stops the run" "notmux_case --yes" "nothing was installed"
 says "--no-tmux installs without it"                   "notmux_case --no-tmux" "installed"
+
+group "Claude Code is checked but not required"
+# tmux present, claude absent. The real installer is never run: with no
+# terminal to answer on it can only skip, which is the point being tested.
+NOCLAUDE=$TMP/noclaude-bin
+mkdir -p "$NOCLAUDE"
+for t in bash sh dirname basename mktemp cp chmod cat grep awk sed id uname rm mkdir cmp tr cut curl tmux; do
+  t_path=$(type -P "$t" 2>/dev/null) && [[ $t_path == /* ]] && ln -sf "$t_path" "$NOCLAUDE/$t"
+done
+
+# shellcheck disable=SC2120  # callers pass installer flags; no args is valid
+noclaude_case() {
+  local h=$TMP/noclaude-home
+  rm -rf "$h"; mkdir -p "$h/.local/bin"; printf '# rc\n' >"$h/.bashrc"
+  env HOME="$h" SHELL=/bin/bash XDG_CONFIG_HOME="$h/.config" CLAUDE_CONFIG_DIR="$h/.claude" \
+      COHORT_CONFIG_DIR="$h/.cohort" PATH="$NOCLAUDE:$h/.local/bin" \
+      "$NOCLAUDE/bash" "$INSTALLER" "$@" 2>&1
+}
+says "a missing claude is reported"    "noclaude_case" "cohort runs Claude Code sessions"
+says "and it says it could not ask"    "noclaude_case" "no terminal to ask on"
+says "but cohort installs regardless"  "noclaude_case" "installed"
+says "and the summary says why nothing will start" \
+  "noclaude_case" "Claude Code is not installed, so no session will start yet"
+says "with the command to fix it"      "noclaude_case" "https://claude.ai/install.sh"
+noclaude_case >/dev/null 2>&1
+[[ -x $TMP/noclaude-home/.local/bin/cohort ]] && ok "the command is on disk" \
+  || bad "the command is on disk"
+lacks "--no-claude skips the check"    "noclaude_case --no-claude" "runs Claude Code sessions"
+says "and the flag is documented"      "'$INSTALLER' --help" "--no-claude"
 
 group "PATH and readiness"
 path_case() {

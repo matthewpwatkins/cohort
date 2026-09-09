@@ -87,7 +87,7 @@ jobs:
       # No tmux preinstalled here on purpose: this leg checks that the
       # installer puts it there itself, which is the path a new user takes.
       - name: Install from the checkout
-        run: ./install-cohort.sh --bindir "$HOME/.local/bin" --yes
+        run: ./install-cohort.sh --bindir "$HOME/.local/bin" --yes --no-claude
       - name: tmux is present afterwards
         run: command -v tmux && tmux -V
       - name: The installed command runs

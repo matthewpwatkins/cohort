@@ -62,9 +62,14 @@ Ready
   tab-completion starts in new shells, or run: source /home/you/.bashrc
 ```
 
-Pass `--bindir DIR` to install somewhere specific, `--no-tmux` to leave the tmux
-check alone, or `--yes` to install tmux without being asked. cohort needs tmux
-3.0 or newer and bash 3.2 or newer, which is what macOS ships.
+If Claude Code itself is missing, the installer offers to run
+`curl -fsSL https://claude.ai/install.sh | bash` for you. Unlike tmux this one is
+not a gate — cohort installs either way, and the closing summary reminds you
+that no session will start until claude is there.
+
+Pass `--bindir DIR` to install somewhere specific, `--no-tmux` or `--no-claude`
+to skip either check, or `--yes` to install both without being asked. cohort
+needs tmux 3.0 or newer and bash 3.2 or newer, which is what macOS ships.
 
 ## Usage
 
