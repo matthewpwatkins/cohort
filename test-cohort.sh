@@ -173,8 +173,8 @@ H=$TMP/home; mkdir -p "$H"
 inst() { env HOME="$H" XDG_CONFIG_HOME="$H/.config" CLAUDE_CONFIG_DIR="$H/.claude" \
              COHORT_CONFIG_DIR="$H/.cohort" COHORT_BINDIR="$H/bin" SHELL=/bin/bash \
              "$INSTALLER" "$@" 2>&1; }
-says "installs the command"              "inst --no-tmux"             "command:  installed"
-says "is idempotent"                     "inst --no-tmux"             "command:  unchanged"
+says "installs the command"              "inst --no-tmux"             "installed"
+says "is idempotent"                     "inst --no-tmux"             "unchanged"
 [[ -f $H/.claude/CLAUDE.md ]] && ok "writes guidance" || bad "writes guidance"
 
 # Which rc file that is depends on the platform: bash on macOS reads
@@ -195,7 +195,7 @@ cmp -s "$SRC/cohort.sh" "$H/bin/cohort" && ok "installed binary matches source" 
 printf 'export MINE=1\n' >"$TMP/rc.user"; cat "$RC" >>"$TMP/rc.user"; mv "$TMP/rc.user" "$RC"
 printf '# my rules\n' >"$TMP/claude.user"; cat "$H/.claude/CLAUDE.md" >>"$TMP/claude.user"
 mv "$TMP/claude.user" "$H/.claude/CLAUDE.md"
-says "uninstalls the command"            "inst --uninstall"           "command:  removed"
+says "uninstalls the command"            "inst --uninstall"           "removed"
 says "keeps the user's rc content"       "cat '$RC'"                  "export MINE=1"
 lacks "and removes its own block"        "cat '$RC'"                  "BEGIN cohort"
 says "keeps the user's CLAUDE.md"        "cat '$H/.claude/CLAUDE.md'" "# my rules"
@@ -211,7 +211,7 @@ wire_case() {
   for f in "$@"; do mkdir -p "$h/$(dirname "$f")"; printf '# existing\n' >"$h/$f"; done
   env HOME="$h" SHELL="$login" XDG_CONFIG_HOME="$h/.config" CLAUDE_CONFIG_DIR="$h/.claude" \
       COHORT_CONFIG_DIR="$h/.cohort" COHORT_BINDIR="$h/bin" "$INSTALLER" --no-tmux 2>&1 \
-    | grep completion
+    | sed -n '/^Shell completion/,/^$/p' 
 }
 says "a fish user gets an autoloaded file" \
   "wire_case fish /usr/bin/fish .config/fish/config.fish" ".config/fish/completions/cohort.fish"
@@ -225,6 +225,40 @@ says "both shells present means both wired" \
 says "an exotic login shell is refused, not guessed at" \
   "wire_case exotic /usr/bin/nu" "is not supported"
 lacks "and nothing is written for it" "wire_case exotic2 /usr/bin/nu" "added"
+
+group "PATH and readiness"
+path_case() {
+  local label=$1 path=$2
+  local h=$TMP/path-$label
+  rm -rf "$h"; mkdir -p "$h/.local/bin" "$h/bin"; printf '# rc\n' >"$h/.bashrc"
+  env HOME="$h" SHELL=/bin/bash XDG_CONFIG_HOME="$h/.config" CLAUDE_CONFIG_DIR="$h/.claude" \
+      COHORT_CONFIG_DIR="$h/.cohort" PATH="$path:$PATH" "$INSTALLER" --no-tmux 2>&1
+}
+says "a bindir already on PATH is preferred" \
+  "path_case onpath '$TMP/path-onpath/.local/bin'" "/.local/bin/cohort"
+says "and it says you are ready now" \
+  "path_case onpath2 '$TMP/path-onpath2/.local/bin'" "cohort is on your PATH in this shell"
+says "otherwise PATH is fixed, not just complained about" \
+  "path_case offpath /nonexistent-dir" "was not on your PATH, so it was added"
+says "and it tells you how to finish" \
+  "path_case offpath2 /nonexistent-dir" "source"
+says "the rc block carries the PATH line" \
+  "cat '$TMP/path-offpath/.bashrc'" 'export PATH='
+
+# Re-running after the preferred directory changed must not leave two copies
+# on PATH shadowing each other.
+upgrade_case() {
+  local h=$TMP/upgrade
+  rm -rf "$h"; mkdir -p "$h/.local/bin" "$h/bin"; printf '# rc\n' >"$h/.bashrc"
+  env HOME="$h" SHELL=/bin/bash XDG_CONFIG_HOME="$h/.config" CLAUDE_CONFIG_DIR="$h/.claude" \
+      COHORT_CONFIG_DIR="$h/.cohort" COHORT_BINDIR="$h/bin" "$INSTALLER" --no-tmux >/dev/null 2>&1
+  # Now with only .local/bin on PATH, which is the one it would otherwise pick.
+  env HOME="$h" SHELL=/bin/bash XDG_CONFIG_HOME="$h/.config" CLAUDE_CONFIG_DIR="$h/.claude" \
+      COHORT_CONFIG_DIR="$h/.cohort" PATH="$h/.local/bin:$PATH" "$INSTALLER" --no-tmux 2>&1
+}
+says "an existing install is upgraded in place" "upgrade_case" "/bin/cohort"
+[[ -f $TMP/upgrade/bin/cohort && ! -f $TMP/upgrade/.local/bin/cohort ]] \
+  && ok "and no second copy appears" || bad "and no second copy appears"
 
 group "installer leaves other people's files alone"
 printf '#!/usr/bin/env bash\necho mine\n' >"$H/bin/cohort" 2>/dev/null || mkdir -p "$H/bin"

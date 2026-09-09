@@ -15,17 +15,40 @@ This installs cohort and gives your claude code installation the "smarts"
 to interact with cohort sessions, spin up new workers, and facilitate messaging
 between your cohort agents.
 
-There is nothing to set up afterwards. The installer puts the command in `~/bin`,
-wires session-name completion into every shell you have (bash, zsh and fish are
-supported; fish gets an autoloaded completion file rather than an rc edit), and installs
-[tmux](https://github.com/tmux/tmux/wiki/Getting-Started) if you do not already
-have it (via brew, apt, dnf, yum, zypper, pacman or apk — it will ask for your
-password if the package manager needs root). Completion applies to shells you
-open from then on.
+There is nothing to set up afterwards, and the installer tells you so in as many
+words. It puts the command in whichever of `~/.local/bin` or `~/bin` your PATH
+already searches, so `cohort` works the moment it finishes; if neither is on
+PATH it extends PATH for you and says which file to source. It wires session-name
+completion into every shell you have — bash, zsh and fish, with fish getting an
+autoloaded completion file rather than an rc edit. Completion applies to shells
+you open from then on.
 
-Pass `--bindir DIR` to install the command somewhere other than `~/bin`, or
-`--no-tmux` to leave the tmux check alone. cohort needs tmux 3.0 or newer and
-bash 3.2 or newer, which is what macOS ships.
+If [tmux](https://github.com/tmux/tmux/wiki/Getting-Started) is missing it offers
+to install it (via brew, apt, dnf, yum, zypper, pacman or apk) and waits for you
+to say yes, since that is the one step that reaches outside your own files.
+
+```
+Command
+  installed /home/you/.local/bin/cohort
+
+Guidance for Claude
+  created   /home/you/.claude/CLAUDE.md
+  loaded into every Claude Code session
+
+Shell completion
+  added     /home/you/.bashrc
+
+tmux
+  present   /usr/bin/tmux
+
+Ready
+  yes       cohort is on your PATH in this shell
+  tab-completion starts in new shells, or run: source /home/you/.bashrc
+```
+
+Pass `--bindir DIR` to install somewhere specific, `--no-tmux` to leave the tmux
+check alone, or `--yes` to install tmux without being asked. cohort needs tmux
+3.0 or newer and bash 3.2 or newer, which is what macOS ships.
 
 ## Usage
 

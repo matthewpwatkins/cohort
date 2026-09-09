@@ -26,9 +26,30 @@ COHORT_DIR=${COHORT_CONFIG_DIR:-$HOME/.cohort}
 
 CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
 CLAUDE_MD=$CONFIG_DIR/CLAUDE.md
-BINDIR=${COHORT_BINDIR:-$HOME/bin}
 MODE=install
 WANT_TMUX=1
+ASSUME_YES=0
+
+on_path() { case ":$PATH:" in *":$1:"*) return 0 ;; *) return 1 ;; esac; }
+
+BINDIRS=("$HOME/.local/bin" "$HOME/bin")
+
+# Prefer a bin directory the shell already searches, so the command works the
+# moment this finishes rather than after a PATH edit the user has to notice.
+# An existing install wins over both: upgrading in place is what someone
+# re-running this expects, and it cannot leave two copies shadowing each other.
+default_bindir() {
+  local d
+  for d in "${BINDIRS[@]}"; do
+    [[ -f $d/cohort ]] && grep -qF 'Installed by install-cohort.sh' "$d/cohort" 2>/dev/null \
+      && { printf '%s\n' "$d"; return; }
+  done
+  for d in "${BINDIRS[@]}"; do
+    on_path "$d" && { printf '%s\n' "$d"; return; }
+  done
+  printf '%s\n' "$HOME/.local/bin"
+}
+BINDIR=${COHORT_BINDIR:-$(default_bindir)}
 
 usage() {
   cat <<'USAGE'
@@ -42,6 +63,10 @@ is missing.
   ./install-cohort.sh --uninstall  remove everything it installed
   ./install-cohort.sh --bindir DIR install somewhere specific
   ./install-cohort.sh --no-tmux    skip the tmux check
+  ./install-cohort.sh --yes        do not ask before installing tmux
+
+By default the command goes to the first of ~/.local/bin or ~/bin already on
+your PATH; if neither is, it is installed and your PATH is extended for you.
 USAGE
   exit "${1:-0}"
 }
@@ -50,6 +75,7 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --uninstall) MODE=uninstall ;;
     --no-tmux) WANT_TMUX=0 ;;
+    -y|--yes) ASSUME_YES=1 ;;
     --bindir) [[ $# -ge 2 ]] || { echo "--bindir needs a directory" >&2; exit 2; }
               BINDIR=$2; shift ;;
     --bindir=*) BINDIR=${1#*=} ;;
@@ -60,9 +86,48 @@ while [[ $# -gt 0 ]]; do
 done
 
 TARGET=$BINDIR/cohort
+
+BOLD='' DIM='' RESET=''
+if [[ -t 1 ]]; then BOLD=$'\033[1m'; DIM=$'\033[2m'; RESET=$'\033[0m'; fi
+
 say()  { printf '%s\n' "$*"; }
 warn() { printf '%s\n' "$*" >&2; }
 die()  { warn "$*"; exit 1; }
+
+banner() {
+  cat <<'ART'
+              _                   _
+  ___   ___  | |__    ___   _ __ | |_
+ / __| / _ \ | '_ \  / _ \ | '__|| __|
+| (__ | (_) || | | || (_) || |   | |_
+ \___| \___/ |_| |_| \___/ |_|    \__|
+ART
+  printf '%s  peer Claude Code sessions, one per tmux session%s\n' "$DIM" "$RESET"
+}
+
+section() { printf '\n%s%s%s\n' "$BOLD" "$1" "$RESET"; }
+status()  { printf '  %-9s %s\n' "$1" "${2:-}"; }
+note()    { printf '  %s%s%s\n' "$DIM" "$*" "$RESET"; }
+
+# Ask a yes/no question, defaulting to yes. Reads the answer from the terminal
+# rather than stdin, which is the script itself when this runs off a pipe.
+# Returns non-zero when there is no terminal to ask, so the caller can say so
+# instead of deciding for the user.
+confirm() {
+  (( ASSUME_YES )) && return 0
+  # The file can exist and still not be openable when the process has no
+  # controlling terminal, which is exactly the case worth detecting.
+  { : >/dev/tty; } 2>/dev/null || return 1
+  local reply
+  printf '  %s [Y/n] ' "$1" >/dev/tty
+  read -r reply </dev/tty || return 1
+  [[ -z $reply || $reply == [yY]* ]]
+}
+
+# Whether a new shell is needed before everything works.
+RELOAD_RC=''
+NEEDS_PATH=0
+on_path "$BINDIR" || NEEDS_PATH=1
 
 # Print a path to <file>: from the checkout if we are in one, else downloaded.
 # Runs in a command substitution, so CACHE and its trap must be set up out here.
@@ -96,8 +161,9 @@ trim_trailing_blank() {
 install_bin() {
   local src
   src=$(payload cohort.sh)
+  section "Command"
   if [[ -x $TARGET ]] && cmp -s "$src" "$TARGET"; then
-    say "command:  unchanged  ($TARGET)"
+    status unchanged "$TARGET"
     return
   fi
   local verb=installed
@@ -105,7 +171,22 @@ install_bin() {
   mkdir -p "$BINDIR"
   cp "$src" "$TARGET"
   chmod 755 "$TARGET"
-  say "command:  $verb  ($TARGET)"
+  status "$verb" "$TARGET"
+}
+
+# An older install may sit in the other candidate directory, where it would
+# shadow or be shadowed by this one depending on PATH order. Only ever remove
+# a file this installer wrote.
+tidy_old_bin() {
+  local d p
+  for d in "${BINDIRS[@]}"; do
+    p=$d/cohort
+    [[ $p == "$TARGET" || ! -f $p ]] && continue
+    if grep -qF 'Installed by install-cohort.sh' "$p" 2>/dev/null; then
+      rm -f "$p"
+      status removed "$p (older copy, would have shadowed this one)"
+    fi
+  done
 }
 
 install_md() {
@@ -127,8 +208,10 @@ install_md() {
     new=$(printf '%s\n' "$block")
   fi
 
+  section "Guidance for Claude"
   if [[ -f $CLAUDE_MD && $old == "$new" ]]; then
-    say "guidance: unchanged  ($CLAUDE_MD)"
+    status unchanged "$CLAUDE_MD"
+    note "loaded into every Claude Code session"
     return
   fi
 
@@ -138,7 +221,8 @@ install_md() {
     grep -qF "$BEGIN_MARK" "$CLAUDE_MD" && verb=updated
   fi
   printf '%s\n' "$new" >"$CLAUDE_MD"
-  say "guidance: $verb  ($CLAUDE_MD)"
+  status "$verb" "$CLAUDE_MD"
+  note "loaded into every Claude Code session"
 }
 
 # tmux is not optional — cohort is a tmux session manager — so install it
@@ -146,8 +230,9 @@ install_md() {
 # root; sudo reads its password from the terminal, not stdin, so this still
 # works when the script is running off a curl pipe.
 install_tmux() {
+  section "tmux"
   if command -v tmux >/dev/null; then
-    say "tmux:     present   ($(command -v tmux))"
+    status present "$(command -v tmux)"
     return
   fi
 
@@ -160,7 +245,8 @@ install_tmux() {
   elif command -v pacman  >/dev/null; then mgr=(pacman -S --noconfirm tmux)
   elif command -v apk     >/dev/null; then mgr=(apk add tmux)
   else
-    warn "tmux:     missing   (no supported package manager found — install tmux yourself)"
+    status missing "no supported package manager found"
+    note "cohort runs every session in tmux — install it, then re-run this"
     return
   fi
 
@@ -171,12 +257,21 @@ install_tmux() {
     if command -v sudo >/dev/null; then
       run=(sudo "${mgr[@]}")
     else
-      warn "tmux:     missing   (need root to run '${mgr[*]}')"
+      status missing "need root to run '${mgr[*]}'"
       return
     fi
   fi
 
-  say "tmux:     installing (${run[*]})"
+  # Installing a system package is the one thing here that reaches outside the
+  # user's own files, so it is the one thing worth asking about.
+  status missing "cohort runs every session in tmux"
+  if ! confirm "Install it with: ${run[*]} ?"; then
+    status skipped "install tmux yourself, then re-run this"
+    note "or re-run with --yes to install it without asking"
+    return
+  fi
+
+  status installing "${run[*]}"
   # A machine that has never fetched package lists, or has a stale index,
   # fails the install with a 404 rather than a missing-package error.
   case ${mgr[0]} in
@@ -191,9 +286,9 @@ install_tmux() {
   DEBIAN_FRONTEND=noninteractive "${run[@]}" || true
   hash -r 2>/dev/null || true
   if command -v tmux >/dev/null; then
-    say "tmux:     installed ($(command -v tmux))"
+    status installed "$(command -v tmux)"
   else
-    warn "tmux:     failed    ('${run[*]}' did not produce tmux — install it yourself)"
+    status failed "'${run[*]}' did not produce tmux — install it yourself"
   fi
 }
 
@@ -235,6 +330,7 @@ have_shell() {
 # Completion is generated by the installed command, so it can never drift from
 # the subcommands that command actually has.
 install_completion() {
+  section "Shell completion"
   mkdir -p "$COHORT_DIR"
   local sh f rc added='' present=''
   for sh in bash zsh fish; do
@@ -251,8 +347,8 @@ install_completion() {
   if [[ ${#shells[@]} -eq 0 ]]; then
     # An exotic login shell. Writing a .bashrc it will never read would report
     # success for something that cannot work.
-    warn "completion: skipped  (${SHELL##*/} is not supported — bash, zsh and fish are)"
-    warn "            the scripts are in $COHORT_DIR if you want to adapt one"
+    status skipped "${SHELL##*/} is not supported — bash, zsh and fish are"
+    note "the scripts are in $COHORT_DIR if you want to adapt one"
     return
   fi
 
@@ -265,6 +361,13 @@ install_completion() {
         cp "$COHORT_DIR/completion.fish" "$FISH_COMPLETION"
         added+="$FISH_COMPLETION "
       fi
+      # Completions autoload, but PATH does not.
+      if (( NEEDS_PATH )) && ! { [[ -f $FISH_DIR/config.fish ]] && grep -qF "$RC_BEGIN" "$FISH_DIR/config.fish"; }; then
+        mkdir -p "$FISH_DIR"
+        printf '\n%s\nset -gx PATH "%s" $PATH\n%s\n' \
+          "$RC_BEGIN" "$BINDIR" "$RC_END" >>"$FISH_DIR/config.fish"
+        added+="$FISH_DIR/config.fish "
+      fi
       continue
     fi
     rc=$(rc_for "$sh")
@@ -275,27 +378,32 @@ install_completion() {
       continue
     fi
     mkdir -p "$(dirname "$rc")"
-    printf '\n%s\n[ -f "%s" ] && . "%s"\n%s\n' \
-      "$RC_BEGIN" "$COHORT_DIR/completion.$sh" "$COHORT_DIR/completion.$sh" "$RC_END" >>"$rc"
+    {
+      printf '\n%s\n' "$RC_BEGIN"
+      (( NEEDS_PATH )) && printf 'export PATH="%s:$PATH"\n' "$BINDIR"
+      printf '[ -f "%s" ] && . "%s"\n%s\n' \
+        "$COHORT_DIR/completion.$sh" "$COHORT_DIR/completion.$sh" "$RC_END"
+    } >>"$rc"
     added+="$rc "
   done
 
   if [[ -n $added ]]; then
-    say "completion: added    (${added% })"
-    say "            open a new shell, or source that file, to pick it up"
+    status added "${added% }"
+    RELOAD_RC=${added%% *}
   else
-    say "completion: current  (${present% })"
+    status current "${present% }"
   fi
 }
 
 uninstall_completion() {
+  section "Shell completion"
   local rc found=0 body
   # Only ever remove a fish completion this installer generated.
   if [[ -f $FISH_COMPLETION ]] && grep -q '__cohort_names' "$FISH_COMPLETION"; then
     rm -f "$FISH_COMPLETION"
     found=1
   fi
-  for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc"; do
+  for rc in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc" "$FISH_DIR/config.fish"; do
     [[ -f $rc ]] || continue
     grep -qF "$RC_BEGIN" "$rc" || continue
     body=$(strip_block "$RC_BEGIN" "$RC_END" <"$rc" | trim_trailing_blank)
@@ -310,7 +418,7 @@ uninstall_completion() {
   done
   rm -f "$COHORT_DIR/completion.bash" "$COHORT_DIR/completion.zsh" \
         "$COHORT_DIR/completion.fish"
-  if [[ $found -eq 1 ]]; then say "completion: removed"; else say "completion: absent"; fi
+  if [[ $found -eq 1 ]]; then status removed; else status absent; fi
 }
 
 # Only ever delete a file this installer wrote. ~/bin is full of your own
@@ -318,6 +426,7 @@ uninstall_completion() {
 ours() { grep -qF 'Installed by install-cohort.sh' "$1" 2>/dev/null; }
 
 uninstall_bin() {
+  section "Command"
   local found=0 p seen=' '
   for p in "$TARGET" "$HOME/bin/cohort" "$HOME/.local/bin/cohort"; do
     [[ -e $p || -L $p ]] || continue
@@ -325,42 +434,64 @@ uninstall_bin() {
     seen+="$p "
     if ours "$p"; then
       rm -f "$p"
-      say "command:  removed  ($p)"
+      status removed "$p"
       found=1
     else
-      warn "command:  skipped  ($p is not ours — left alone)"
+      status skipped "$p is not ours — left alone"
     fi
   done
-  [[ $found -eq 1 ]] || say "command:  absent"
+  [[ $found -eq 1 ]] || status absent
 }
 
 uninstall_md() {
+  section "Guidance for Claude"
   if [[ ! -f $CLAUDE_MD ]] || ! grep -qF "$BEGIN_MARK" "$CLAUDE_MD"; then
-    say "guidance: absent"
+    status absent
     return
   fi
   local body
   body=$(strip_block <"$CLAUDE_MD" | trim_trailing_blank)
   if [[ -z $body ]]; then
     rm -f "$CLAUDE_MD"
-    say "guidance: removed  (deleted now-empty $CLAUDE_MD)"
+    status removed "deleted now-empty $CLAUDE_MD"
   else
     printf '%s\n' "$body" >"$CLAUDE_MD"
-    say "guidance: removed  ($CLAUDE_MD)"
+    status removed "$CLAUDE_MD"
   fi
 }
 
 if [[ $MODE == install ]]; then
+  banner
   install_bin
+  tidy_old_bin
   install_md
   install_completion
   [[ $WANT_TMUX -eq 1 ]] && install_tmux
-  case ":$PATH:" in
-    *":$BINDIR:"*) ;;
-    *) warn "note: $BINDIR is not on PATH — add it, or reinstall with --bindir" ;;
-  esac
+
+  # Say plainly whether the command works right now, because "installed" and
+  # "usable in this shell" are not the same thing when PATH had to change.
+  section "Ready"
+  if (( NEEDS_PATH )); then
+    if [[ -n $RELOAD_RC ]]; then
+      status "almost" "$BINDIR was not on your PATH, so it was added to $RELOAD_RC"
+      note "finish with:  source $RELOAD_RC        (or open a new terminal)"
+    else
+      status "almost" "$BINDIR is not on your PATH"
+      note "add it with:  export PATH=\"$BINDIR:\$PATH\""
+    fi
+  else
+    status "yes" "cohort is on your PATH in this shell"
+    [[ -z $RELOAD_RC ]] || note "tab-completion starts in new shells, or run: source $RELOAD_RC"
+  fi
+  printf '\n'
+  note "cohort new lead     start a session"
+  note "cohort help         everything else"
+  printf '\n'
 else
   uninstall_bin
   uninstall_md
   uninstall_completion
+  printf '\n'
+  note "settings in $COHORT_DIR were left alone; delete that directory to remove them"
+  printf '\n'
 fi
