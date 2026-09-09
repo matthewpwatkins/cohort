@@ -277,12 +277,17 @@ session_exists() { tmux has-session -t "=$1" 2>/dev/null; }
 #
 # Oldest first, so the numbers `ls` prints and the numbers `attach` accepts
 # cannot disagree, and so a session's number does not move under it when a
-# newer one appears: a lead started before its workers stays 1. The name
-# breaks ties, since workers spawned in a burst share a second.
+# newer one appears: a lead started before its workers stays 1.
+#
+# Ordered by session id rather than by session_created. tmux hands out ids in
+# creation order and never reuses one, while created has a resolution of a
+# second — three workers spawned in a burst share a timestamp exactly. The id
+# is sorted here because list-sessions itself has no ordering option.
 tagged() {
-  tmux list-sessions -F "#{$TAG}"$'\t'"#{session_name}"$'\t'"#{session_path}"$'\t'"#{session_created}"$'\t'"#{session_attached}"$'\t'"#{$WT_TAG}" 2>/dev/null \
-    | awk -F'\t' '$1 == 1 { sub(/^[^\t]*\t/, ""); print }' \
-    | sort -t"$(printf '\t')" -k3,3n -k1,1
+  tmux list-sessions -F "#{$TAG}"$'\t'"#{session_id}"$'\t'"#{session_name}"$'\t'"#{session_path}"$'\t'"#{session_created}"$'\t'"#{session_attached}"$'\t'"#{$WT_TAG}" 2>/dev/null \
+    | awk -F'\t' '$1 == 1 { sub(/^[^\t]*\t/, ""); sub(/^\$/, ""); print }' \
+    | sort -t"$(printf '\t')" -k1,1n \
+    | cut -f2-
 }
 
 human_age() {

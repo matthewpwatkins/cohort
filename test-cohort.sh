@@ -194,14 +194,19 @@ says "ls is empty afterwards"            "'$COHORT' ls"               "no cohort
 
 group "sessions are numbered oldest first"
 # Named so that age and alphabetical order disagree: sorting by name would put
-# "aaa-newest" first, and the point is that it does not.
+# "aaa-newest" first, and the point is that it does not. No sleeps, so all
+# three land in the same second and only the session id can order them —
+# session_created has a resolution of one second.
 spawn zzz-oldest --no-worktree
-sleep 1
 spawn aaa-newest --no-worktree
-says "the oldest session is number 1"    "'$COHORT' ls --names | sed -n 1p" "zzz-oldest"
-says "and a lead keeps its number when a worker joins" \
-  "spawn mmm-later --no-worktree; '$COHORT' ls --names | sed -n 1p" "zzz-oldest"
-says "index 1 still resolves to it"      "resolve_via 1"              "cohort-zzz-oldest"
+spawn mmm-later --no-worktree
+says "the first session spawned is number 1" \
+  "'$COHORT' ls --names | sed -n 1p" "zzz-oldest"
+says "the second is number 2"            "'$COHORT' ls --names | sed -n 2p" "aaa-newest"
+says "the third is number 3"             "'$COHORT' ls --names | sed -n 3p" "mmm-later"
+says "index 1 resolves to the oldest"    "resolve_via 1"              "cohort-zzz-oldest"
+# The one that would sort first by name must not be number 1.
+lacks "name order does not decide"       "'$COHORT' ls --names | sed -n 1p" "aaa-newest"
 "$COHORT" kill --all --yes >/dev/null 2>&1
 
 group "installer"
