@@ -54,8 +54,9 @@ so the other subcommands recognise it. The prefix keeps the session clear of
 tmux sessions you started yourself; every subcommand takes the bare <name> and
 adds it back. Extra args pass through to claude verbatim.
 
-Inherits $PWD, so cd into a worktree before spawning that worktree's worker.
-Safe to run from inside tmux: it never steals your pane.
+Inherits $PWD. Safe to run from inside tmux: it never steals your pane. From a
+plain prompt outside tmux it attaches you to the new session; with no terminal
+to attach to, as in a script or a CI job, it prints the name and returns.
 
 The launcher, model and permission mode each resolve highest-first:
 
@@ -409,7 +410,11 @@ cmd_new() {
   fi
   tmux set-option -t "$sid" remain-on-exit off 2>/dev/null || true
 
-  if [[ -n ${TMUX:-} ]]; then
+  # Attaching is the friendly thing for someone at a prompt, and the wrong
+  # thing everywhere else: with no terminal to attach to, tmux fails with
+  # "open terminal failed" and `new` exits non-zero despite having started the
+  # session, which makes cohort unusable from a script or a CI job.
+  if [[ -n ${TMUX:-} || ! -t 0 || ! -t 1 ]]; then
     printf '%s started as tmux session %s (cohort attach %s)\n' "$name" "$session" "$name"
   else
     tmux attach -t "=$session"

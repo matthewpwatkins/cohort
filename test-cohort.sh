@@ -141,6 +141,9 @@ says "a launcher that dies is diagnosed" \
 says "and its output is shown"           "'$COHORT' new --command '$TMP/bin/dies' boom2" "stub failure"
 says "duplicate names are refused"       "'$COHORT' new --command '$TMP/bin/stub' wt-default" "already exists"
 
+if spawn exit-status --no-worktree; then ok "new exits 0 with no terminal to attach to"
+else bad "new exits 0 with no terminal to attach to"; fi
+
 group "listing"
 says "ls has a header"                   "'$COHORT' ls"               "NAME"
 says "ls shows a spawned session"        "'$COHORT' ls"               "wt-default"
@@ -167,8 +170,9 @@ says "ls is empty afterwards"            "'$COHORT' ls"               "no cohort
 
 group "installer"
 H=$TMP/home; mkdir -p "$H"
-inst() { env HOME="$H" CLAUDE_CONFIG_DIR="$H/.claude" COHORT_CONFIG_DIR="$H/.cohort" \
-             COHORT_BINDIR="$H/bin" SHELL=/bin/bash "$INSTALLER" "$@" 2>&1; }
+inst() { env HOME="$H" XDG_CONFIG_HOME="$H/.config" CLAUDE_CONFIG_DIR="$H/.claude" \
+             COHORT_CONFIG_DIR="$H/.cohort" COHORT_BINDIR="$H/bin" SHELL=/bin/bash \
+             "$INSTALLER" "$@" 2>&1; }
 says "installs the command"              "inst --no-tmux"             "command:  installed"
 says "is idempotent"                     "inst --no-tmux"             "command:  unchanged"
 [[ -f $H/.claude/CLAUDE.md ]] && ok "writes guidance" || bad "writes guidance"
@@ -205,8 +209,9 @@ wire_case() {
   local h=$TMP/wire-$label f
   rm -rf "$h"; mkdir -p "$h"
   for f in "$@"; do mkdir -p "$h/$(dirname "$f")"; printf '# existing\n' >"$h/$f"; done
-  env HOME="$h" SHELL="$login" CLAUDE_CONFIG_DIR="$h/.claude" COHORT_CONFIG_DIR="$h/.cohort" \
-      COHORT_BINDIR="$h/bin" "$INSTALLER" --no-tmux 2>&1 | grep completion
+  env HOME="$h" SHELL="$login" XDG_CONFIG_HOME="$h/.config" CLAUDE_CONFIG_DIR="$h/.claude" \
+      COHORT_CONFIG_DIR="$h/.cohort" COHORT_BINDIR="$h/bin" "$INSTALLER" --no-tmux 2>&1 \
+    | grep completion
 }
 says "a fish user gets an autoloaded file" \
   "wire_case fish /usr/bin/fish .config/fish/config.fish" ".config/fish/completions/cohort.fish"
